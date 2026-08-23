@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="description" content="Create and play with a portable VRM avatar.">
+  <title>VIVERSE Avatar</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@500;600;700&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./sdk-scene.css?v=20260823-sdk-scene">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.1/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.1/examples/jsm/",
+        "@pixiv/three-vrm": "https://esm.sh/@pixiv/three-vrm@2.1.2?bundle&external=three",
+        "@pixiv/three-vrm-animation": "https://esm.sh/@pixiv/three-vrm-animation@2.1.2?bundle&external=three"
+      }
+    }
+  </script>
+  <script type="module" src="./components/avatar-creator-entry/avatar-creator-entry.js?v=20260823-local-avatar"></script>
+</head>
+<body>
+  <main class="scene-shell" aria-label="VIVERSE Avatar scene">
+    <canvas id="landing-scene-canvas" class="scene-canvas" aria-label="VRM scene"></canvas>
+
+    <header class="top-bar">
+      <avatar-creator-entry></avatar-creator-entry>
+    </header>
+
+    <p id="notice" class="notice" role="status" hidden></p>
+
+  </main>
+  <script type="module" src="./sdk-scene.js?v=20260823-vrma-cache"></script>
+</body>
+</html>

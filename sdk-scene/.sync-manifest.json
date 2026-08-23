@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "mode": "preview",
+  "files": {
+    "components/avatar-creator-entry/Icon_close.svg": "7195d6640531134df5aadfdfc6535e2db067d38349c71bc48d759db1ef91af5b",
+    "components/avatar-creator-entry/avatar-creator-contract.js": "47d229cc46ef28d57f30a206f506f07ca15c19ae030bcec99035883d06b0e976",
+    "components/avatar-creator-entry/avatar-creator-entry.css": "0552c172d84c47fc681863612712dfcc193e05ee7bf2316a6114a1b0bf0afe92",
+    "components/avatar-creator-entry/avatar-creator-entry.js": "7d8366808d54d3f85cf2f6794756f6d1fe0a847152d17600008e3020d1201968",
+    "components/avatar-creator-entry/creator-frame-layout.js": "9e4b427319a635b887b621fa31752f8cf75af74e44fecbc6ae27894af7a5a581",
+    "components/avatar-presentation/avatar-motion.js": "2cc3e15b92d033231e47b899f985520506ed722bc995d1f5b911efb50843db9d",
+    "components/avatar-presentation/avatar-presentation.js": "97c98708cfc0b5cf5d20eebc0adc9e731c5c06256907c178570067be40f20a1e",
+    "components/avatar-presentation/vrma-cache.js": "ffff82b8b678b75cc5d1d7a78226cc84e65186a1fe318f277728e5591267b056",
+    "index.html": "b74af12d6a6da3ba9c75c4118a38fb45a8e6d0b322754c6f74c1839108288718",
+    "runtime/scene-avatar-controller.js": "caf1280afb80a85329d55046a315cb6cd9aab0bbd570c8a18de886c0514b85f8",
+    "runtime/three-scene.js": "5d6bcf10328861fba2299bb9ce1532c0240a8ab50e43efcb93d8c3ea32135177",
+    "sdk-config.js": "7c1c27917c9752d635dc284dcbf3a6d88faeb8661274893569ae2ea6d5e181e5",
+    "sdk-scene.css": "7a523098055a149575cb0df9797fecd959fed28c4f44467e5c5f61ab21283426",
+    "sdk-scene.js": "bb6965baacd5406fec6abb7062fbc37971b9eb24a231dfd30f7e0ad8ba912eb4",
+    "services/avatar-store.js": "8ca567c92e458495386018a20932567700f7c6b26c6eae12febc6a00fe029c38",
+    "services/embed-session.js": "99544ed2bda9ac3e2b6d93edae8bc307c22351c4c762d492f851f7b9bc10db71",
+    "services/indexeddb-avatar-storage.js": "b95e3d0b4a50f8bdf85b43e1a46990300ebbf9e535ca27108d4fc3e5ee1db59e",
+    "services/local-avatar-store.js": "fc1bd92100cca1920a7972e4ef7548ce7aba72f756281b0dd60b034234f09f81",
+    "test/avatar-creator-contract.test.js": "9b3aebf6fc576b6d4662cbf9250d4913cb80049df1703d748fe00cdbe5ecf4ed",
+    "test/avatar-motion.test.js": "53e5890c6da4917b0d3decaa42b91b156319998c7a8569e209b929d53caf4ab2",
+    "test/avatar-store.test.js": "6d895018cb604260342a81d81461766635aeaa07a5d9c420b241cd9d175ce234",
+    "test/creator-frame-layout.test.js": "ee33d64b6271357587396aaf44b91888eda209e7f43a07bd9cc4f7df2a5acd65",
+    "test/embed-session.test.js": "1c6b3c5053188f4ece7f63f8bb0acb5b787e97158d2159befeafcc1e0cc7eec9",
+    "test/indexeddb-avatar-storage.test.js": "cf5c21106f02b0101b07f7a42f2b7ffe1a10fe2bf1e0cec6e7559968e7195008",
+    "test/local-avatar-store.test.js": "eb6f30bb9710476b5b1cbff772cb713b8cb1812639fa4079b19d537bbc11aeb9",
+    "test/vrma-cache.test.js": "a149404ccd01b9bf4d8fdf251681cfbd5c0f13f208e594ab6f0af583bd11461f"
+  }
+}

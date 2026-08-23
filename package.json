@@ -1,0 +1,16 @@
+{
+  "name": "avatar-sdk",
+  "version": "0.1.0-preview.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check sdk-scene/sdk-config.js && node --check sdk-scene/sdk-scene.js && node --check sdk-scene/services/*.js && node --check sdk-scene/components/avatar-creator-entry/*.js && node --check sdk-scene/components/avatar-presentation/*.js && node --check sdk-scene/runtime/*.js",
+    "test": "node --test sdk-scene/test/*.test.js",
+    "start": "http-server . -p 4173 -c-1"
+  },
+  "devDependencies": {
+    "fake-indexeddb": "^6.2.5",
+    "http-server": "^14.1.1"
+  },
+  "license": "MIT"
+}
