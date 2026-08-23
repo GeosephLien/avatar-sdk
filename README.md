@@ -2,7 +2,7 @@
 
 Avatar SDK provides a browser-based VRM reference scene with avatar creation, local persistence, movement, camera controls, and VRMA animation playback.
 
-This repository is currently a private preview. The Avatar Creator and runtime assets are hosted services configured in `sdk-scene/sdk-config.js`; generated avatars remain in the host Origin's IndexedDB.
+This repository is currently a public preview. The Avatar Creator and runtime assets are hosted services configured in `sdk-scene/sdk-config.js`; generated avatars remain in the host Origin's IndexedDB.
 
 ## Run locally
 
