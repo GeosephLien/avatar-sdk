@@ -2,7 +2,7 @@
 
 Avatar SDK provides a browser-based VRM reference scene with avatar creation, local persistence, movement, camera controls, and VRMA animation playback.
 
-This repository is currently a public preview. The Avatar Creator and runtime assets are hosted services configured in `sdk-scene/sdk-config.js`; generated avatars remain in the host Origin's IndexedDB.
+This repository is a public preview. It runs without credentials or environment configuration. The Avatar Creator and versioned default runtime assets are served from `https://ac3-website.pages.dev`; avatars created by a user remain in the embedding site's browser storage.
 
 ## Run locally
 
@@ -15,25 +15,24 @@ npm start
 
 Open `http://localhost:4173/sdk-scene/`.
 
-## Runtime configuration
+## Hosted resources
 
-Set `window.__AVATAR_SDK_CONFIG__` before loading SDK modules to override the hosted service endpoints:
+The reference scene uses the hosted Creator, default VRM and thumbnail, seven default VRMA clips, and the Creator's Unity files. These resources are versioned and are not duplicated in this repository.
+
+Load the Creator Entry component directly:
 
 ```html
-<script>
-  window.__AVATAR_SDK_CONFIG__ = {
-    apiBaseUrl: 'https://api.example.com',
-    creatorUrl: 'https://creator.example.com/',
-    assetBaseUrl: 'https://assets.example.com'
-  };
-</script>
+<script type="module" src="https://ac3-website.pages.dev/sdk-scene/components/avatar-creator-entry/avatar-creator-entry.js"></script>
+<avatar-creator-entry></avatar-creator-entry>
 ```
 
-The host must permit the configured API, Creator, and asset origins in its Content Security Policy. The Creator is accepted only from its exact configured Origin.
+The host Content Security Policy must allow `https://ac3-website.pages.dev` in `script-src`, `style-src`, `frame-src`, `connect-src`, and `img-src`. It must also allow `blob:` in `connect-src` and `img-src` for locally created avatars. Creator messages are accepted only from the active iframe at its exact origin.
 
 ## Storage
 
-The newest avatar is stored as one `current` record in the host Origin's IndexedDB. If persistence is unavailable, the newest avatar remains available only for the current page lifetime.
+The newest avatar is stored as one `current` record in the embedding Origin's IndexedDB. Creating an avatar transfers its VRM and thumbnail directly to the embedding page. If persistence is unavailable, the newest avatar remains available only for the current page lifetime. Clearing site data removes it.
+
+`sdk-scene/components/avatar-presentation/avatar-presentation.js` provides the DOM-free VRM and animation runtime. Applications can supply their own animation manifest through `createAvatarPresentation`; the reference scene uses the hosted defaults.
 
 ## License
 

@@ -1,6 +1,7 @@
 :root {
   color-scheme: light;
   font-family: "Noto Sans", sans-serif;
+  font-weight: 400;
   --ink: #121417;
   --paper: #f4f6f1;
   --signal: #e8ff47;

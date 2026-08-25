@@ -1,5 +1,4 @@
 import { createCreatorFrameLayout } from './creator-frame-layout.js';
-import { embedSession } from '../../services/embed-session.js';
 import { avatarStore } from '../../services/avatar-store.js';
 import { createSdkAssetUrl, getAvatarSdkConfig } from '../../sdk-config.js';
 import {
@@ -54,7 +53,6 @@ class AvatarCreatorEntry extends HTMLElement {
     super();
     this.attachShadow({ mode: 'open' }).append(template.content.cloneNode(true));
     this.connected = false;
-    this.creatorLaunchToken = '';
     this.creatorRequestId = '';
     this.creatorBusy = false;
     this.creatorLaunchLoading = false;
@@ -176,7 +174,6 @@ class AvatarCreatorEntry extends HTMLElement {
     try {
       const creatorUrl = resolveCreatorUrl(this.getAttribute('creator-src') || config.creatorUrl, window.location.href);
       this.creatorOrigin = creatorUrl.origin;
-      this.creatorLaunchToken = await embedSession.createLaunchToken();
       this.creatorRequestId = createRequestId();
       this.elements.creatorFrame.src = creatorUrl.href;
     } catch (error) {
@@ -209,7 +206,6 @@ class AvatarCreatorEntry extends HTMLElement {
     this.elements.creatorPanel.setAttribute('aria-hidden', 'true');
     this.elements.creatorPanel.hidden = false;
     this.elements.creatorCloseButton.hidden = false;
-    this.creatorLaunchToken = '';
     this.creatorRequestId = '';
     this.creatorOrigin = '';
     this.creatorBusy = false;
@@ -293,9 +289,6 @@ class AvatarCreatorEntry extends HTMLElement {
     if (!isTrustedCreatorMessage(event, this.elements.creatorFrame.contentWindow, this.creatorOrigin, this.creatorRequestId)) return;
     if (message.type === 'ac3:ready') {
       this.postToCreator('init', {
-        launchToken: this.creatorLaunchToken,
-        apiBase: embedSession.apiBase,
-        contentMode: 'export-host',
         uiMode: 'modal',
         autoStart: true,
         locale: document.documentElement.lang || 'en'
@@ -313,7 +306,7 @@ class AvatarCreatorEntry extends HTMLElement {
       });
     } else if (message.type === 'ac3:blocked' || message.type === 'ac3:error') {
       this.creatorBusy = false;
-      this.emit('avatar-creator-notice', { message: message.payload?.detail || message.payload?.message || 'Creator authorization failed.' });
+      this.emit('avatar-creator-notice', { message: message.payload?.detail || message.payload?.message || 'Creator failed to start.' });
     } else if (message.type === 'ac3:close-request') {
       this.closeCreator();
     }

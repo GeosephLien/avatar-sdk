@@ -3,6 +3,7 @@
   pointer-events: auto;
   color: var(--ink, #121417);
   font-family: "Noto Sans", sans-serif;
+  font-weight: 400;
   --creator-panel-max-width: 1400px;
   --creator-inline-gutter: 20px;
   --creator-block-gutter: 20px;
@@ -150,9 +151,9 @@ button { font: inherit; letter-spacing: 0; }
 .save-avatar p { margin: 0; }
 
 .launch-loading-panel h2,
-.save-avatar h2 { font-size: 1.2rem; }
+.save-avatar h2 { font-size: 1.2rem; font-weight: 700; }
 
-.launch-loading-panel p { margin-top: 0.9rem; font-weight: 700; text-align: center; }
+.launch-loading-panel p { margin-top: 0.9rem; font-weight: 400; text-align: center; }
 
 .launch-loading-track,
 .save-avatar-track {
@@ -190,6 +191,7 @@ button { font: inherit; letter-spacing: 0; }
   color: #fff;
   background: rgba(255, 255, 255, 0.08);
   cursor: pointer;
+  font-weight: 700;
 }
 
 @keyframes save-avatar-progress {
