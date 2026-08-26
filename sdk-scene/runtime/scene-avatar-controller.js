@@ -14,6 +14,14 @@
 //   controller.update(delta) returns an Avatar Presentation motion state.
 
 import * as THREE from 'three';
+import {
+  resolveCameraStrafeGazeYaw,
+  resolveCameraStrafeInput
+} from './camera-strafe.js';
+import {
+  resolveJoystickLocomotionInput,
+  resolveProgressiveLocomotion
+} from './locomotion.js';
 
 const TESTED_MIN = 158;
 const TESTED_MAX = 164;
@@ -65,6 +73,7 @@ export function createSceneAvatarController(options = {}) {
     keyboardTarget = globalThis.window,
     moveSpeed = 2.4,
     runSpeedMultiplier = 2.3,
+    locomotionAccelerationDuration = 2,
     turnResponsiveness = 12,
     cameraOffset = 1.1,
     initialCameraDistance = 4.5,
@@ -135,6 +144,7 @@ export function createSceneAvatarController(options = {}) {
 
   const keyState = {
     KeyW: false, KeyA: false, KeyS: false, KeyD: false,
+    KeyQ: false, KeyE: false,
     ArrowUp: false, ArrowLeft: false, ArrowDown: false, ArrowRight: false,
     ShiftLeft: false, ShiftRight: false
   };
@@ -142,23 +152,14 @@ export function createSceneAvatarController(options = {}) {
   const activePointers = new Map();
   let pinchPrevDistance = 0;
 
-  const joystickInput = { horizontal: 0, vertical: 0 };
+  const joystickInput = { horizontal: 0, vertical: 0, accelerating: false };
   let joystickActive = false;
   let joystickPointerId = null;
-  let joystickRunning = false;
-  let lastJoystickReleaseTime = 0;
-  const JOYSTICK_DOUBLE_TAP_MS = 320;
-  const KEYBOARD_DOUBLE_TAP_MS = 320;
-  const MOVEMENT_KEY_CODES = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight'];
-  let lastMovementKeyReleaseTime = 0;
-  let keyboardRunning = false;
+  const LOCOMOTION_ACCELERATION_DURATION = Math.max(0.01, Number(locomotionAccelerationDuration) || 2);
+  let locomotionElapsed = 0;
   const joystickCenter = { x: 0, y: 0 };
-  const JOYSTICK_SIZE_PRESETS = {
-    default: { base: 120, knob: 52, drag: 44 },
-    small: { base: 80, knob: 36, drag: 30 }
-  };
-  let joystickSize = JOYSTICK_SIZE_PRESETS.default;
-  let joystickSizeKey = 'default';
+  const joystickSize = { base: 90, knob: 40, drag: 24 };
+  const JUMP_BUTTON_DIAMETER = 64;
   let joystickUi = null;
   let joystickRequestedVisible = false;
 
@@ -180,6 +181,8 @@ export function createSceneAvatarController(options = {}) {
   let justLanded = false;
   let currentLocomotion = 'idle';
   let currentSpeed = 0;
+  let currentLocomotionProgress = 0;
+  let currentGazeLockYaw = 0;
 
   const previousTouchAction = domElement.style.touchAction;
   domElement.style.touchAction = 'none';
@@ -230,32 +233,69 @@ export function createSceneAvatarController(options = {}) {
 
   function getMovementInput() {
     if (!controlEnabledFlag) {
-      return { horizontal: 0, vertical: 0, running: false };
+      return { horizontal: 0, vertical: 0, sprinting: false };
     }
     let horizontal = 0;
     let vertical = 0;
-    let running = false;
+    let sprinting = false;
+    let gazeLocked = false;
+    let accelerating = true;
     if (useKeyboard) {
-      horizontal = (keyState.KeyD || keyState.ArrowRight ? 1 : 0) - (keyState.KeyA || keyState.ArrowLeft ? 1 : 0);
-      vertical = (keyState.KeyW || keyState.ArrowUp ? 1 : 0) - (keyState.KeyS || keyState.ArrowDown ? 1 : 0);
+      const keyboardMovement = resolveCameraStrafeInput({
+        forward: keyState.KeyW || keyState.ArrowUp,
+        backward: keyState.KeyS || keyState.ArrowDown,
+        left: keyState.KeyA || keyState.ArrowLeft,
+        right: keyState.KeyD || keyState.ArrowRight,
+        strafeLeft: keyState.KeyQ,
+        strafeRight: keyState.KeyE
+      });
+      horizontal = keyboardMovement.horizontal;
+      vertical = keyboardMovement.vertical;
+      gazeLocked = keyboardMovement.gazeLocked;
       if (horizontal || vertical) {
-        running = keyState.ShiftLeft || keyState.ShiftRight || keyboardRunning;
+        sprinting = keyState.ShiftLeft || keyState.ShiftRight;
       }
     }
     if (joystickActive) {
       horizontal = joystickInput.horizontal;
       vertical = joystickInput.vertical;
-      running = joystickRunning;
+      sprinting = false;
+      gazeLocked = false;
+      accelerating = joystickInput.accelerating;
     }
-    return { horizontal, vertical, running };
+    return { horizontal, vertical, sprinting, gazeLocked, accelerating };
   }
 
   function updateMovement(delta) {
-    const { horizontal, vertical, running } = getMovementInput();
+    const { horizontal, vertical, sprinting, gazeLocked, accelerating } = getMovementInput();
     const moving = Boolean(horizontal || vertical);
-    currentLocomotion = moving ? (running ? 'run' : 'walk') : 'idle';
     currentSpeed = 0;
-    if (!moving) return;
+    if (!moving) {
+      locomotionElapsed = 0;
+      currentLocomotionProgress = 0;
+      currentLocomotion = 'idle';
+      currentGazeLockYaw = 0;
+      return;
+    }
+
+    locomotionElapsed = accelerating
+      ? Math.min(locomotionElapsed + delta, LOCOMOTION_ACCELERATION_DURATION)
+      : 0;
+    const locomotion = resolveProgressiveLocomotion({
+      elapsed: locomotionElapsed,
+      accelerationDuration: LOCOMOTION_ACCELERATION_DURATION,
+      moveSpeed,
+      runSpeedMultiplier,
+      sprinting
+    });
+    currentLocomotionProgress = locomotion.progress;
+    currentLocomotion = locomotion.locomotion;
+    currentGazeLockYaw = resolveCameraStrafeGazeYaw({
+      cameraYaw: cameraState.yaw,
+      horizontal,
+      vertical,
+      gazeLocked
+    });
 
     const moveDirection = new THREE.Vector3();
     const forward = new THREE.Vector3(-Math.sin(cameraState.yaw), 0, -Math.cos(cameraState.yaw)).normalize();
@@ -266,8 +306,7 @@ export function createSceneAvatarController(options = {}) {
     if (length === 0) return;
     const speedScale = Math.min(length, 1);
     moveDirection.divideScalar(length);
-    const speed = running ? moveSpeed * runSpeedMultiplier : moveSpeed;
-    currentSpeed = speed * speedScale;
+    currentSpeed = locomotion.speed * speedScale;
     anchor.position.addScaledVector(moveDirection, delta * currentSpeed);
     const targetRotation = Math.atan2(moveDirection.x, moveDirection.z);
     const rotationDelta = Math.atan2(
@@ -307,7 +346,9 @@ export function createSceneAvatarController(options = {}) {
       airbornePhase: jumpState.phase,
       justJumped,
       justLanded,
-      speed: currentSpeed
+      speed: currentSpeed,
+      locomotionProgress: currentLocomotionProgress,
+      gazeLockYaw: currentGazeLockYaw
     };
     justJumped = false;
     justLanded = false;
@@ -320,8 +361,9 @@ export function createSceneAvatarController(options = {}) {
     Object.keys(keyState).forEach((key) => {
       keyState[key] = false;
     });
-    keyboardRunning = false;
-    lastMovementKeyReleaseTime = 0;
+    locomotionElapsed = 0;
+    currentLocomotionProgress = 0;
+    currentGazeLockYaw = 0;
     resetJoystick();
     if (jumpButtonUi && jumpButtonUi.btn) {
       jumpButtonUi.btn.classList.remove('is-pressed');
@@ -404,13 +446,6 @@ export function createSceneAvatarController(options = {}) {
   }
 
   // --- Keyboard ---
-  function anyMovementKeyDown() {
-    for (let i = 0; i < MOVEMENT_KEY_CODES.length; i++) {
-      if (keyState[MOVEMENT_KEY_CODES[i]]) return true;
-    }
-    return false;
-  }
-
   function onKeyDown(event) {
     if (!controlEnabledFlag || !useKeyboard) return;
     if (bindSpaceKey && physicsEnabled && jumpEnabledFlag && event.code === 'Space' && !event.repeat) {
@@ -419,25 +454,12 @@ export function createSceneAvatarController(options = {}) {
       return;
     }
     if (Object.prototype.hasOwnProperty.call(keyState, event.code)) {
-      const isMovementKey = MOVEMENT_KEY_CODES.includes(event.code);
-      const wasDown = keyState[event.code];
       keyState[event.code] = true;
-      if (isMovementKey && !wasDown && !keyboardRunning) {
-        const now = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
-        if (lastMovementKeyReleaseTime > 0 && (now - lastMovementKeyReleaseTime) <= KEYBOARD_DOUBLE_TAP_MS) {
-          keyboardRunning = true;
-        }
-      }
     }
   }
   function onKeyUp(event) {
     if (Object.prototype.hasOwnProperty.call(keyState, event.code)) {
-      const isMovementKey = MOVEMENT_KEY_CODES.includes(event.code);
       keyState[event.code] = false;
-      if (isMovementKey && !anyMovementKeyDown()) {
-        lastMovementKeyReleaseTime = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
-        keyboardRunning = false;
-      }
     }
   }
 
@@ -466,9 +488,9 @@ export function createSceneAvatarController(options = {}) {
   function resetJoystick() {
     joystickActive = false;
     joystickPointerId = null;
-    joystickRunning = false;
     joystickInput.horizontal = 0;
     joystickInput.vertical = 0;
+    joystickInput.accelerating = false;
     if (joystickUi && joystickUi.knob) {
       joystickUi.knob.style.transform = 'translate(0px, 0px)';
     }
@@ -482,8 +504,13 @@ export function createSceneAvatarController(options = {}) {
     const angle = dist > 0 ? Math.atan2(dy, dx) : 0;
     const knobX = Math.cos(angle) * clamped;
     const knobY = Math.sin(angle) * clamped;
-    joystickInput.horizontal = knobX / joystickSize.drag;
-    joystickInput.vertical = -knobY / joystickSize.drag; // screen-y down -> forward negative
+    const locomotionInput = resolveJoystickLocomotionInput({
+      horizontal: knobX,
+      vertical: -knobY
+    });
+    joystickInput.horizontal = locomotionInput.horizontal;
+    joystickInput.vertical = locomotionInput.vertical;
+    joystickInput.accelerating = locomotionInput.accelerating;
     if (joystickUi && joystickUi.knob) {
       joystickUi.knob.style.transform = `translate(${knobX}px, ${knobY}px)`;
     }
@@ -496,8 +523,6 @@ export function createSceneAvatarController(options = {}) {
     event.stopPropagation();
     joystickPointerId = event.pointerId;
     joystickActive = true;
-    const now = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
-    joystickRunning = lastJoystickReleaseTime > 0 && (now - lastJoystickReleaseTime) <= JOYSTICK_DOUBLE_TAP_MS;
     const rect = joystickUi.base.getBoundingClientRect();
     joystickCenter.x = rect.left + rect.width / 2;
     joystickCenter.y = rect.top + rect.height / 2;
@@ -516,7 +541,6 @@ export function createSceneAvatarController(options = {}) {
     if (event.pointerId !== joystickPointerId) return;
     event.preventDefault();
     event.stopPropagation();
-    lastJoystickReleaseTime = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
     resetJoystick();
   }
 
@@ -638,36 +662,9 @@ export function createSceneAvatarController(options = {}) {
     applyJumpButtonVisibility();
   }
 
-  function setControllerSize(size) {
-    const nextKey = size === 'small' ? 'small' : 'default';
-    if (nextKey === joystickSizeKey) return;
-    joystickSizeKey = nextKey;
-    joystickSize = JOYSTICK_SIZE_PRESETS[nextKey];
-    if (joystickUi && joystickUi.base && joystickUi.knob) {
-      const { base, knob } = joystickUi;
-      base.style.width = `${joystickSize.base}px`;
-      base.style.height = `${joystickSize.base}px`;
-      const knobHalf = joystickSize.knob / 2;
-      knob.style.width = `${joystickSize.knob}px`;
-      knob.style.height = `${joystickSize.knob}px`;
-      knob.style.margin = `${-knobHalf}px 0 0 ${-knobHalf}px`;
-    }
-    applyJumpButtonSize();
-    resetJoystick();
-  }
-
   // --- Jump button (mobile / coarse pointer) ---
   function getJumpButtonDiameter() {
-    return joystickSize.knob + 28;
-  }
-
-  function applyJumpButtonSize() {
-    if (!jumpButtonUi || !jumpButtonUi.btn) return;
-    const diameter = getJumpButtonDiameter();
-    const btn = jumpButtonUi.btn;
-    btn.style.width = `${diameter}px`;
-    btn.style.height = `${diameter}px`;
-    btn.style.fontSize = joystickSizeKey === 'small' ? '11px' : '13px';
+    return JUMP_BUTTON_DIAMETER;
   }
 
   function shouldShowJumpButton() {
@@ -719,9 +716,22 @@ export function createSceneAvatarController(options = {}) {
     btn.type = 'button';
     btn.setAttribute('aria-label', 'Jump');
     btn.dataset.viverseMeJumpButton = 'true';
-    btn.textContent = 'Jump';
+    const jumpIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    jumpIcon.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    jumpIcon.setAttribute('height', '24px');
+    jumpIcon.setAttribute('viewBox', '0 -960 960 960');
+    jumpIcon.setAttribute('width', '24px');
+    jumpIcon.setAttribute('fill', '#e3e3e3');
+    jumpIcon.setAttribute('aria-hidden', 'true');
+    const jumpIconPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    jumpIconPath.setAttribute('d', 'M440-727 256-544l-56-56 280-280 280 280-56 57-184-184v287h-80v-287Zm0 487v-120h80v120h-80Zm0 160v-80h80v80h-80Z');
+    jumpIcon.append(jumpIconPath);
+    btn.append(jumpIcon);
     btn.style.cssText = [
       'position:absolute',
+      'display:grid',
+      'place-items:center',
+      'padding:0',
       'right:24px',
       'bottom:32px',
       `width:${diameter}px`,
@@ -732,9 +742,6 @@ export function createSceneAvatarController(options = {}) {
       '-webkit-backdrop-filter:blur(6px)',
       'backdrop-filter:blur(6px)',
       'color:rgba(240,243,255,0.92)',
-      `font:600 ${joystickSizeKey === 'small' ? '11px' : '13px'}/1 system-ui, -apple-system, "Segoe UI", sans-serif`,
-      'letter-spacing:0.04em',
-      'text-transform:uppercase',
       'touch-action:none',
       'user-select:none',
       '-webkit-user-select:none',
@@ -903,7 +910,6 @@ export function createSceneAvatarController(options = {}) {
     setEnableJump,
     setCameraDistance,
     setJoystickVisible,
-    setControllerSize,
     jump: requestJump,
     dispose,
     get anchor() { return anchor; },

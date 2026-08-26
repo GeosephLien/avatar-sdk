@@ -1,5 +1,5 @@
 const DATABASE_NAME = 'viverse-avatar';
-const DATABASE_VERSION = 1;
+const DATABASE_VERSION = 2;
 const STORE_NAME = 'avatars';
 const CURRENT_AVATAR_ID = 'current';
 

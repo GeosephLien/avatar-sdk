@@ -182,7 +182,7 @@ export async function createVrmScene(options) {
 
   const clock = new THREE.Clock();
 
-  scene.add(new THREE.HemisphereLight(0x446792, 0xc3cadd, 0.5));
+  scene.add(new THREE.HemisphereLight(0x446792, 0xc3cadd, 0.8));
   const directionalLight = new THREE.DirectionalLight(0xffffff, 2);
   directionalLight.position.set(4, 7, 5);
   directionalLight.castShadow = true;
@@ -396,9 +396,6 @@ export async function createVrmScene(options) {
     const controlEnabled = animationEnabled && !(state && state.controlEnabled === false);
     presentation.setEnableAnimation(animationEnabled);
     controller.setEnableControl(controlEnabled);
-    if (state && state.controllerSize !== undefined && controller.setControllerSize) {
-      controller.setControllerSize(state.controllerSize);
-    }
   }
 
   function setAnimations(animations) {
@@ -407,12 +404,6 @@ export async function createVrmScene(options) {
 
   function setJoystickVisible(visible) {
     controller.setJoystickVisible(visible);
-  }
-
-  function setControllerSize(size) {
-    if (controller.setControllerSize) {
-      controller.setControllerSize(size);
-    }
   }
 
   function getCurrentAvatarMeta() {
@@ -454,7 +445,6 @@ export async function createVrmScene(options) {
     setControlsState,
     setAnimations,
     setJoystickVisible,
-    setControllerSize,
     setAvatarText,
     start,
     dispose

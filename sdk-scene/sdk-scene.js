@@ -8,8 +8,7 @@ const DEFAULT_VRM_URL = `${createSdkAssetUrl('avatars/default/v1/default-avatar.
 const DEFAULT_THUMBNAIL_URL = `${createSdkAssetUrl('avatars/default/v1/default-avatar.png', config)}?v=${PUBLIC_ASSET_REVISION}`;
 
 const elements = {
-  creatorEntry: document.querySelector('avatar-creator-entry'),
-  notice: document.getElementById('notice')
+  creatorEntry: document.querySelector('avatar-creator-entry')
 };
 
 let sceneController = null;
@@ -41,12 +40,6 @@ async function restoreCustomAvatar() {
   }
 }
 
-function setNotice(message = '') {
-  elements.notice.textContent = message;
-  elements.notice.hidden = !message;
-  if (message) window.setTimeout(() => setNotice(''), 4200);
-}
-
 async function bootstrapScene() {
   const { createVrmScene } = await import('./runtime/three-scene.js?v=20260823-vrma-cache');
   sceneController = await createVrmScene({
@@ -67,12 +60,13 @@ async function bootstrapScene() {
 elements.creatorEntry?.addEventListener('avatar-creator-open', () => sceneController?.pause());
 elements.creatorEntry?.addEventListener('avatar-creator-close', () => sceneController?.resume());
 elements.creatorEntry?.addEventListener('avatar-created', (event) => {
-  applyCustomAvatar(event.detail?.avatar).catch((error) => setNotice(error.message || 'Unable to load avatar.'));
+  applyCustomAvatar(event.detail?.avatar).catch((error) => console.error('Unable to load avatar:', error));
 });
-elements.creatorEntry?.addEventListener('avatar-creator-notice', (event) => setNotice(event.detail?.message));
+elements.creatorEntry?.addEventListener('avatar-creator-notice', (event) => {
+  console.info('Avatar Creator:', event.detail?.message);
+});
 window.addEventListener('pagehide', () => avatarStore.releaseAvatar(currentLocalAvatar), { once: true });
 
 bootstrapScene().catch((error) => {
-  console.error(error);
-  setNotice(error.message || 'Unable to start the scene.');
+  console.error('Unable to start the scene:', error);
 });

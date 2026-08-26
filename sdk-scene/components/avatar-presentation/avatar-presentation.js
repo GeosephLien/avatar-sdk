@@ -9,6 +9,9 @@ import {
 import {
   normalizeMotionState,
   resolveAnimationIntent,
+  resolveGazeBoneYaws,
+  resolveLocomotionBlend,
+  resolveWalkAnimationTimeScale,
   resolveTransientIntent
 } from './avatar-motion.js';
 import { createVrmaCache } from './vrma-cache.js';
@@ -72,6 +75,12 @@ export function createAvatarPresentation(options = {}) {
   let disposed = false;
   let previousFootstepPhase = null;
   let previousFootstepIntent = null;
+  let appliedGazeLockYaw = 0;
+  let smoothedGazeLockYaw = 0;
+  const runAnimationTimeScale = Math.max(1, Number(options.runAnimationTimeScale) || 1.15);
+  const walkAnimationTimeScale = Math.max(1, Number(options.walkAnimationTimeScale) || runAnimationTimeScale);
+  const headGazeAxis = new THREE.Vector3(0, 1, 0);
+  const headGazeQuaternion = new THREE.Quaternion();
 
   function emit(type, detail = {}) {
     onEvent({ type, detail });
@@ -88,13 +97,54 @@ export function createAvatarPresentation(options = {}) {
     previousFootstepIntent = null;
   }
 
+  function getHumanoidBone(name) {
+    if (!currentVrm || !currentVrm.humanoid) return null;
+    return currentVrm.humanoid.getRawBoneNode(name)
+      || currentVrm.humanoid.getNormalizedBoneNode(name);
+  }
+
+  function applyGazeBoneYaws(gazeLockYaw, direction = 1) {
+    const boneYaws = resolveGazeBoneYaws({ gazeLockYaw });
+    Object.entries(boneYaws).forEach(([name, yaw]) => {
+      const bone = getHumanoidBone(name);
+      if (!bone) return;
+      headGazeQuaternion.setFromAxisAngle(headGazeAxis, yaw * direction);
+      bone.quaternion.multiply(headGazeQuaternion);
+    });
+  }
+
+  function clearAppliedHeadGaze() {
+    if (!appliedGazeLockYaw) return;
+    applyGazeBoneYaws(appliedGazeLockYaw, -1);
+    appliedGazeLockYaw = 0;
+  }
+
+  function applyHeadGaze(delta) {
+    const targetYaw = motion.gazeLockYaw;
+    const yawDelta = Math.atan2(
+      Math.sin(targetYaw - smoothedGazeLockYaw),
+      Math.cos(targetYaw - smoothedGazeLockYaw)
+    );
+    const response = 1 - Math.exp(-16 * delta);
+    smoothedGazeLockYaw += yawDelta * response;
+    if (Math.abs(smoothedGazeLockYaw) < 0.0001 && Math.abs(targetYaw) < 0.0001) {
+      smoothedGazeLockYaw = 0;
+      return;
+    }
+
+    applyGazeBoneYaws(smoothedGazeLockYaw);
+    appliedGazeLockYaw = smoothedGazeLockYaw;
+  }
+
   function releaseCurrentAvatar() {
+    clearAppliedHeadGaze();
     clearMixer();
     if (!currentVrm) return;
     object3D.remove(currentVrm.scene);
     if (ownsCurrentVrm) VRMUtils.deepDispose(currentVrm.scene);
     currentVrm = null;
     ownsCurrentVrm = false;
+    smoothedGazeLockYaw = 0;
   }
 
   function activateIntent(nextIntent, fadeDuration = 0.2, restart = false) {
@@ -103,19 +153,47 @@ export function createAvatarPresentation(options = {}) {
     const nextAction = actions[nextIntent];
     if (!nextAction) return;
     if (nextIntent === currentIntent && !restart) return;
-    if (previousAction) previousAction.fadeOut(fadeDuration);
+    if (currentIntent === 'walk' || currentIntent === 'run') {
+      ['walk', 'run'].forEach((name) => {
+        if (actions[name]) actions[name].fadeOut(fadeDuration);
+      });
+    } else if (previousAction) {
+      previousAction.fadeOut(fadeDuration);
+    }
     nextAction.reset().fadeIn(fadeDuration).play();
     currentIntent = nextIntent;
+  }
+
+  function activateLocomotionBlend() {
+    const blend = resolveLocomotionBlend(motion, capabilities);
+    if (blend.walk === 0 && blend.run === 0) return false;
+
+    const wasLocomoting = currentIntent === 'walk' || currentIntent === 'run';
+    if (!wasLocomoting && actions[currentIntent]) actions[currentIntent].fadeOut(0.2);
+
+    const walkAction = actions.walk;
+    const runAction = actions.run;
+    if (!wasLocomoting) {
+      walkAction.reset().play();
+      if (runAction) runAction.reset().play();
+    }
+    walkAction.enabled = true;
+    walkAction.setEffectiveTimeScale(resolveWalkAnimationTimeScale(motion, walkAnimationTimeScale));
+    walkAction.setEffectiveWeight(blend.walk);
+    if (runAction) {
+      runAction.enabled = true;
+      runAction.setEffectiveWeight(blend.run);
+    }
+    currentIntent = blend.run >= blend.walk ? 'run' : 'walk';
+    return true;
   }
 
   function applyMotion() {
     if (!animationEnabled || !mixer) return;
     transientIntent = resolveTransientIntent(transientIntent, motion, capabilities);
-    activateIntent(
-      transientIntent || resolveAnimationIntent(motion, capabilities),
-      0.2,
-      motion.justJumped || motion.justLanded
-    );
+    const intent = transientIntent || resolveAnimationIntent(motion, capabilities);
+    if (!transientIntent && (intent === 'walk' || intent === 'run') && activateLocomotionBlend()) return;
+    activateIntent(intent, 0.2, motion.justJumped || motion.justLanded);
   }
 
   async function loadAnimations(vrm, sequence) {
@@ -138,7 +216,7 @@ export function createAvatarPresentation(options = {}) {
     mixer = new THREE.AnimationMixer(vrm.scene);
     actions = Object.fromEntries(clips.map(([name, clip]) => [name, clip ? mixer.clipAction(clip) : null]));
     capabilities = Object.fromEntries(DEFAULT_ANIMATION_NAMES.map((name) => [name, Boolean(actions[name])]));
-    if (actions.run) actions.run.setEffectiveTimeScale(Number(options.runAnimationTimeScale) || 1.15);
+    if (actions.run) actions.run.setEffectiveTimeScale(runAnimationTimeScale);
     ['jump_start', 'jump_up', 'jump_down'].forEach((name) => {
       if (!actions[name]) return;
       actions[name].setLoop(THREE.LoopOnce, 1);
@@ -219,6 +297,7 @@ export function createAvatarPresentation(options = {}) {
   function update(delta) {
     if (disposed || !currentVrm) return;
     const dt = Number.isFinite(delta) ? Math.min(Math.max(delta, 0), 0.05) : 0;
+    clearAppliedHeadGaze();
     if (animationEnabled && mixer) {
       mixer.update(dt);
       const action = currentIntent === 'walk' ? actions.walk : currentIntent === 'run' ? actions.run : null;
@@ -239,6 +318,7 @@ export function createAvatarPresentation(options = {}) {
       }
     }
     if (typeof currentVrm.update === 'function') currentVrm.update(dt);
+    applyHeadGaze(dt);
   }
 
   function dispose() {
