@@ -105,7 +105,7 @@ button { font: inherit; letter-spacing: 0; }
   cursor: pointer;
 }
 
-.creator-close-button img { display: block; width: 100%; height: 100%; }
+.creator-close-button svg { display: block; width: 24px; height: 24px; margin: auto; }
 .creator-close-button:hover { opacity: 0.75; }
 .creator-close-button:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.72); outline-offset: 2px; }
 

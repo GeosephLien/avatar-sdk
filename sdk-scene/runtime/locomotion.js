@@ -1,8 +1,8 @@
 export function resolveProgressiveLocomotion({
   elapsed = 0,
   accelerationDuration = 2,
-  moveSpeed = 2.4,
-  runSpeedMultiplier = 2.3,
+  moveSpeed = 1.6,
+  runSpeedMultiplier = 3,
   sprinting = false
 } = {}) {
   const duration = Math.max(0.01, Number(accelerationDuration) || 2);
@@ -31,5 +31,14 @@ export function resolveJoystickLocomotionInput({
     horizontal: horizontal / inputLength,
     vertical: vertical / inputLength,
     accelerating: true
+  };
+}
+
+export function resolveLocomotionDeceleration({ elapsed = 0, duration = 0.25, initialSpeed = 0 } = {}) {
+  const safeDuration = Math.max(0.01, Number(duration) || 0.25);
+  const progress = Math.min(Math.max(Number(elapsed) || 0, 0), safeDuration) / safeDuration;
+  return {
+    complete: progress >= 1,
+    speed: Math.max(0, Number(initialSpeed) || 0) * (1 - progress)
   };
 }

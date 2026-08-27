@@ -5,13 +5,18 @@ import {
   DEFAULT_ANIMATION_BASE_URL,
   DEFAULT_ANIMATION_REVISION
 } from '../components/avatar-presentation/avatar-presentation.js?v=20260823-vrma-cache';
-import { createSceneAvatarController } from './scene-avatar-controller.js';
+import { createSceneAddonHost } from './scene-addon-host.js?v=20260828-addon-ui-slots';
+import { createSceneAddonRegistry } from './scene-addon-registry.js?v=20260827-addon-registry';
+import { createSceneAvatarController } from './scene-avatar-controller.js?v=20260827-scene-addons';
 
 export async function createVrmScene(options) {
   const {
     canvas,
     avatarStatus,
     setLoadingState,
+    addonUiRoot,
+    addonHudRoot,
+    addonOverlayRoot,
     animations: initialAnimations = null,
     animationBaseUrl = DEFAULT_ANIMATION_BASE_URL,
     animationRevision = DEFAULT_ANIMATION_REVISION
@@ -246,6 +251,40 @@ export async function createVrmScene(options) {
     enableControl: true
   });
   const camera = controller.camera;
+  const addonHost = createSceneAddonHost({
+    worldParent: scene,
+    uiParent: addonOverlayRoot || addonUiRoot || canvas.parentElement,
+    ...(addonHudRoot ? {
+      hudParent: addonHudRoot,
+      createHudRoot({ id }) {
+        const root = document.createElement('div');
+        root.dataset.sceneAddonHud = id;
+        return root;
+      }
+    } : {}),
+    createWorldRoot({ id }) {
+      const root = new THREE.Group();
+      root.name = `scene-addon:${id}`;
+      return root;
+    },
+    createUiRoot({ id }) {
+      const root = document.createElement('div');
+      root.dataset.sceneAddon = id;
+      return root;
+    },
+    player: Object.freeze({
+      getPosition(target = {}) {
+        target.x = controller.anchor.position.x;
+        target.y = controller.anchor.position.y;
+        target.z = controller.anchor.position.z;
+        return target;
+      },
+      resetPosition(position) {
+        controller.resetPosition(position);
+      }
+    })
+  });
+  const addonRegistry = createSceneAddonRegistry({ mountAddon: addonHost.mountAddon });
 
   let currentAvatarMeta = null;
   let activeAvatarKey = '';
@@ -301,6 +340,7 @@ export async function createVrmScene(options) {
     const delta = Math.min(clock.getDelta(), 0.05);
     presentation.setMotion(controller.update(delta));
     presentation.update(delta);
+    addonHost.update(delta);
     const avatarPosition = controller.anchor.position;
     directionalLight.position.set(avatarPosition.x + 4, 7, avatarPosition.z + 5);
     directionalLight.target.position.set(avatarPosition.x, 0, avatarPosition.z);
@@ -406,6 +446,10 @@ export async function createVrmScene(options) {
     controller.setJoystickVisible(visible);
   }
 
+  function setControlProfile(profileId) {
+    return controller.setProfile(profileId);
+  }
+
   function getCurrentAvatarMeta() {
     if (!currentAvatarMeta && !activeAvatarKey) return null;
     return {
@@ -423,6 +467,8 @@ export async function createVrmScene(options) {
     document.removeEventListener('visibilitychange', handleVisibilityChange);
     canvas.removeEventListener('webglcontextlost', handleContextLost);
     canvas.removeEventListener('webglcontextrestored', handleContextRestored);
+    addonRegistry.dispose();
+    addonHost.dispose();
     controller.dispose();
     presentation.dispose();
     checkerFloor.geometry.dispose();
@@ -445,7 +491,14 @@ export async function createVrmScene(options) {
     setControlsState,
     setAnimations,
     setJoystickVisible,
+    setControlProfile,
     setAvatarText,
+    mountAddon: addonHost.mountAddon,
+    unmountAddon: addonHost.unmountAddon,
+    addons: addonRegistry,
+    controlPackages: controller.controlPackages,
+    controlProfiles: controller.controlProfiles,
+    get activeControlProfile() { return controller.activeProfile; },
     start,
     dispose
   };

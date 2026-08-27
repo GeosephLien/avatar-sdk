@@ -5,10 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="description" content="Create and play with a portable VRM avatar.">
   <title>VIVERSE Avatar</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./sdk-scene.css?v=20260823-sdk-scene">
+  <link rel="stylesheet" href="./fonts/noto-sans/v1/noto-sans.css">
+  <link rel="stylesheet" href="./sdk-scene.css?v=20260828-scene-menu">
   <script type="importmap">
     {
       "imports": {
@@ -27,8 +25,13 @@
 
     <header class="top-bar">
       <avatar-creator-entry></avatar-creator-entry>
+      <div class="top-bar-actions">
+        <div class="addon-hud-slot" aria-label="Scene addon status"></div>
+        <sdk-scene-menu></sdk-scene-menu>
+      </div>
     </header>
+    <div class="addon-overlay-layer"></div>
   </main>
-  <script type="module" src="./sdk-scene.js?v=20260823-vrma-cache"></script>
+  <script type="module" src="./sdk-scene.js?v=20260828-scene-menu"></script>
 </body>
 </html>

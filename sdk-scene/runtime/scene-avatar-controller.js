@@ -19,9 +19,31 @@ import {
   resolveCameraStrafeInput
 } from './camera-strafe.js';
 import {
+  resolveLocomotionDeceleration,
   resolveJoystickLocomotionInput,
   resolveProgressiveLocomotion
 } from './locomotion.js';
+import {
+  resolveDestinationStep,
+  resolveFollowCameraPosition
+} from './control-profile-motion.js';
+import {
+  createDestinationPointerState,
+  updateDestinationPointer
+} from './destination-pointer-control.js';
+import {
+  classifyWheelInput,
+  WHEEL_INPUT_KINDS
+} from './trackpad-wheel.js';
+import {
+  createControlPackageRegistry,
+  createControlProfileRegistry
+} from './control-package-registry.js';
+import {
+  CONTROL_PACKAGE_IDS,
+  CONTROL_PROFILE_IDS,
+  CONTROL_PROFILES
+} from './control-package-definitions.js';
 
 const TESTED_MIN = 158;
 const TESTED_MAX = 164;
@@ -71,14 +93,21 @@ export function createSceneAvatarController(options = {}) {
     input = {},
     uiContainer = domElement?.parentElement,
     keyboardTarget = globalThis.window,
-    moveSpeed = 2.4,
-    runSpeedMultiplier = 2.3,
+    moveSpeed = 1.6,
+    runSpeedMultiplier = 3,
     locomotionAccelerationDuration = 2,
     turnResponsiveness = 12,
     cameraOffset = 1.1,
     initialCameraDistance = 4.5,
     minCameraDistance = 1.75,
-    maxCameraDistance = 6.5
+    maxCameraDistance = 6.5,
+    initialProfile = CONTROL_PROFILE_IDS.THIRD_PERSON_LOCOMOTION,
+    fixedCameraYaw = Math.PI / 4,
+    fixedCameraPitch = 0.58,
+    fixedCameraDistance = 10,
+    fixedCameraMinDistance = 5,
+    fixedCameraMaxDistance = 16,
+    destinationStoppingDistance = 0.08
   } = options;
 
   if (!scene || typeof scene.add !== 'function') {
@@ -128,6 +157,47 @@ export function createSceneAvatarController(options = {}) {
     minDistance: minCameraDistance,
     maxDistance: maxCameraDistance
   };
+  const fixedCameraState = {
+    yaw: fixedCameraYaw,
+    pitch: fixedCameraPitch,
+    distance: fixedCameraDistance,
+    minDistance: fixedCameraMinDistance,
+    maxDistance: fixedCameraMaxDistance
+  };
+  let cameraMode = 'orbit';
+  let controlMode = 'analog';
+  let controlBehavior = 'locomotion';
+  let activeDestination = null;
+  let continuousDestination = false;
+  let destinationPointerState = createDestinationPointerState();
+  const clickDragThreshold = 6;
+  const raycaster = new THREE.Raycaster();
+  const pointerNdc = new THREE.Vector2();
+  const destinationPoint = new THREE.Vector3();
+  const controlWorldRoot = new THREE.Group();
+  controlWorldRoot.name = 'scene-control-packages';
+  const destinationMarker = new THREE.Group();
+  const destinationRing = new THREE.Mesh(
+    new THREE.RingGeometry(0.19, 0.21, 48),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, depthWrite: false })
+  );
+  const destinationDot = new THREE.Mesh(
+    new THREE.CircleGeometry(0.035, 24),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, depthWrite: false })
+  );
+  destinationRing.rotation.x = -Math.PI / 2;
+  destinationDot.rotation.x = -Math.PI / 2;
+  destinationMarker.add(destinationRing, destinationDot);
+  destinationMarker.visible = false;
+  let destinationMarkerAnimationElapsed = 0;
+  const destinationMarkerAnimationDuration = 0.32;
+  let destinationMarkerFade = '';
+  let destinationMarkerFadeElapsed = 0;
+  const destinationMarkerFadeDuration = 0.3;
+  const destinationMarkerDefaultColor = 0xffffff;
+  const destinationMarkerContinuousColor = 0x3b82f6;
+  controlWorldRoot.add(destinationMarker);
+  scene.add(controlWorldRoot);
 
   // Seed an initial camera position from cameraState so the first paint
   // (before update() runs) is already in the right spot instead of (0,0,0).
@@ -151,6 +221,7 @@ export function createSceneAvatarController(options = {}) {
 
   const activePointers = new Map();
   let pinchPrevDistance = 0;
+  let lastTrackpadTime = -Infinity;
 
   const joystickInput = { horizontal: 0, vertical: 0, accelerating: false };
   let joystickActive = false;
@@ -167,7 +238,9 @@ export function createSceneAvatarController(options = {}) {
   const GRAVITY = Math.max(0, Number(gravity) || 0);
   const JUMP_VELOCITY = Math.max(0, Number(jumpVelocity) || 0);
   const GROUND_Y = Number.isFinite(groundY) ? Number(groundY) : 0;
+  const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -GROUND_Y);
   let jumpEnabledFlag = enableJump !== false;
+  let profileAllowsJump = true;
   const jumpState = {
     vy: 0,
     grounded: true,
@@ -183,6 +256,15 @@ export function createSceneAvatarController(options = {}) {
   let currentSpeed = 0;
   let currentLocomotionProgress = 0;
   let currentGazeLockYaw = 0;
+  const destinationDecelerationDuration = 0.25;
+  const destinationDeceleration = {
+    active: false,
+    elapsed: 0,
+    initialSpeed: 0,
+    initialProgress: 0,
+    directionX: 0,
+    directionZ: 0
+  };
 
   const previousTouchAction = domElement.style.touchAction;
   domElement.style.touchAction = 'none';
@@ -198,7 +280,7 @@ export function createSceneAvatarController(options = {}) {
   }
 
   function requestJump() {
-    if (!physicsEnabled || !jumpEnabledFlag) return;
+    if (!physicsEnabled || !jumpEnabledFlag || !profileAllowsJump) return;
     const isAirJump = jumpState.phase !== 'grounded';
     if (isAirJump && jumpState.airJumpUsed) return;
     jumpState.airJumpUsed = isAirJump;
@@ -232,7 +314,7 @@ export function createSceneAvatarController(options = {}) {
   }
 
   function getMovementInput() {
-    if (!controlEnabledFlag) {
+    if (!controlEnabledFlag || controlMode !== 'analog') {
       return { horizontal: 0, vertical: 0, sprinting: false };
     }
     let horizontal = 0;
@@ -266,7 +348,196 @@ export function createSceneAvatarController(options = {}) {
     return { horizontal, vertical, sprinting, gazeLocked, accelerating };
   }
 
+  function getActiveCameraState() {
+    return cameraMode === 'fixed' ? fixedCameraState : cameraState;
+  }
+
+  function cancelDestination() {
+    activeDestination = null;
+    continuousDestination = false;
+    if (destinationMarker.visible) {
+      destinationMarkerFade = 'out';
+      destinationMarkerFadeElapsed = 0;
+    }
+  }
+
+  function resetDestinationDeceleration({ preserveDirection = false } = {}) {
+    destinationDeceleration.active = false;
+    destinationDeceleration.elapsed = 0;
+    destinationDeceleration.initialSpeed = 0;
+    destinationDeceleration.initialProgress = 0;
+    if (!preserveDirection) {
+      destinationDeceleration.directionX = 0;
+      destinationDeceleration.directionZ = 0;
+    }
+  }
+
+  function stopContinuousDestination() {
+    const shouldDecelerate = continuousDestination
+      && currentSpeed > 0
+      && (destinationDeceleration.directionX || destinationDeceleration.directionZ);
+    if (shouldDecelerate) {
+      destinationDeceleration.active = true;
+      destinationDeceleration.elapsed = 0;
+      destinationDeceleration.initialSpeed = currentSpeed;
+      destinationDeceleration.initialProgress = currentLocomotionProgress;
+    }
+    cancelDestination();
+  }
+
+  function setDestinationMarkerColor(color) {
+    destinationRing.material.color.setHex(color);
+    destinationDot.material.color.setHex(color);
+  }
+
+  function setDestinationFromClientPoint(clientX, clientY, { continuous = false } = {}) {
+    if (!camera || controlMode !== 'destination') return;
+    const rect = domElement.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    pointerNdc.set(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1
+    );
+    raycaster.setFromCamera(pointerNdc, camera);
+    if (!raycaster.ray.intersectPlane(groundPlane, destinationPoint)) return;
+    resetDestinationDeceleration({ preserveDirection: true });
+    activeDestination = { x: destinationPoint.x, z: destinationPoint.z };
+    destinationMarker.position.set(destinationPoint.x, GROUND_Y + 0.025, destinationPoint.z);
+    if (continuousDestination && continuous) return;
+    continuousDestination = continuous;
+    setDestinationMarkerColor(continuous ? destinationMarkerContinuousColor : destinationMarkerDefaultColor);
+    destinationMarker.visible = true;
+    destinationMarker.scale.setScalar(1.7);
+    destinationMarkerAnimationElapsed = 0;
+    destinationMarkerFade = '';
+    destinationMarkerFadeElapsed = 0;
+    destinationRing.material.opacity = 0.95;
+    destinationDot.material.opacity = 0.95;
+  }
+
+  function setDestinationFromPointer(event) {
+    setDestinationFromClientPoint(event.clientX, event.clientY);
+  }
+
+  function updateDestinationPointerHold(delta) {
+    const result = updateDestinationPointer(destinationPointerState, { type: 'tick', delta }, {
+      dragThreshold: clickDragThreshold
+    });
+    destinationPointerState = result.state;
+    if (result.intent === 'enter-continuous' || destinationPointerState.phase === 'continuous') {
+      setDestinationFromClientPoint(destinationPointerState.x, destinationPointerState.y, { continuous: true });
+    }
+  }
+
+  function updateDestinationMarker(delta) {
+    if (!destinationMarker.visible) return;
+    if (destinationMarkerAnimationElapsed < destinationMarkerAnimationDuration) {
+      destinationMarkerAnimationElapsed = Math.min(
+        destinationMarkerAnimationElapsed + delta,
+        destinationMarkerAnimationDuration
+      );
+      const progress = destinationMarkerAnimationElapsed / destinationMarkerAnimationDuration;
+      const easedProgress = 1 - Math.pow(1 - progress, 3);
+      destinationMarker.scale.setScalar(1.7 - 0.7 * easedProgress);
+    }
+    if (!destinationMarkerFade) return;
+    destinationMarkerFadeElapsed = Math.min(
+      destinationMarkerFadeElapsed + delta,
+      destinationMarkerFadeDuration
+    );
+    const fadeProgress = destinationMarkerFadeElapsed / destinationMarkerFadeDuration;
+    const opacity = destinationMarkerFade === 'in' ? fadeProgress * 0.95 : (1 - fadeProgress) * 0.95;
+    destinationRing.material.opacity = opacity;
+    destinationDot.material.opacity = opacity;
+    if (fadeProgress < 1) return;
+    if (destinationMarkerFade === 'out') {
+      destinationMarker.visible = false;
+      destinationMarkerAnimationElapsed = 0;
+    }
+    destinationMarkerFade = '';
+  }
+
+  function updateDestinationMovement(delta) {
+    currentGazeLockYaw = 0;
+    if (destinationDeceleration.active) {
+      const previousSpeed = currentSpeed;
+      destinationDeceleration.elapsed += delta;
+      const deceleration = resolveLocomotionDeceleration({
+        elapsed: destinationDeceleration.elapsed,
+        duration: destinationDecelerationDuration,
+        initialSpeed: destinationDeceleration.initialSpeed
+      });
+      const distance = (previousSpeed + deceleration.speed) * 0.5 * delta;
+      anchor.position.x += destinationDeceleration.directionX * distance;
+      anchor.position.z += destinationDeceleration.directionZ * distance;
+      currentSpeed = deceleration.speed;
+      currentLocomotionProgress = destinationDeceleration.initialProgress
+        * (deceleration.speed / destinationDeceleration.initialSpeed);
+      currentLocomotion = currentLocomotionProgress >= 0.5 ? 'run' : 'walk';
+      if (deceleration.complete) {
+        resetDestinationDeceleration();
+        currentSpeed = 0;
+        currentLocomotionProgress = 0;
+        currentLocomotion = 'idle';
+      }
+      return;
+    }
+    if (!controlEnabledFlag || !activeDestination) {
+      currentSpeed = 0;
+      locomotionElapsed = 0;
+      currentLocomotionProgress = 0;
+      currentLocomotion = 'idle';
+      return;
+    }
+    locomotionElapsed = Math.min(locomotionElapsed + delta, LOCOMOTION_ACCELERATION_DURATION);
+    const locomotion = resolveProgressiveLocomotion({
+      elapsed: locomotionElapsed,
+      accelerationDuration: LOCOMOTION_ACCELERATION_DURATION,
+      moveSpeed,
+      runSpeedMultiplier
+    });
+    const step = resolveDestinationStep({
+      current: anchor.position,
+      destination: activeDestination,
+      maxDistance: locomotion.speed * delta,
+      stoppingDistance: destinationStoppingDistance
+    });
+    if (step.arrived) {
+      anchor.position.x = step.x;
+      anchor.position.z = step.z;
+      if (continuousDestination) {
+        destinationPointerState = updateDestinationPointer(destinationPointerState, { type: 'cancel' }).state;
+        stopContinuousDestination();
+      } else {
+        cancelDestination();
+      }
+      if (!destinationDeceleration.active) {
+        locomotionElapsed = 0;
+        currentLocomotionProgress = 0;
+        currentLocomotion = 'idle';
+      }
+      return;
+    }
+    anchor.position.x = step.x;
+    anchor.position.z = step.z;
+    currentSpeed = locomotion.speed;
+    currentLocomotionProgress = locomotion.progress;
+    currentLocomotion = locomotion.locomotion;
+    destinationDeceleration.directionX = step.directionX;
+    destinationDeceleration.directionZ = step.directionZ;
+    const targetRotation = Math.atan2(step.directionX, step.directionZ);
+    const rotationDelta = Math.atan2(
+      Math.sin(targetRotation - target.rotation.y),
+      Math.cos(targetRotation - target.rotation.y)
+    );
+    target.rotation.y += rotationDelta * (1 - Math.exp(-Math.max(0, turnResponsiveness) * delta));
+  }
+
   function updateMovement(delta) {
+    if (controlMode === 'destination') {
+      updateDestinationMovement(delta);
+      return;
+    }
     const { horizontal, vertical, sprinting, gazeLocked, accelerating } = getMovementInput();
     const moving = Boolean(horizontal || vertical);
     currentSpeed = 0;
@@ -290,15 +561,16 @@ export function createSceneAvatarController(options = {}) {
     });
     currentLocomotionProgress = locomotion.progress;
     currentLocomotion = locomotion.locomotion;
+    const activeCameraState = getActiveCameraState();
     currentGazeLockYaw = resolveCameraStrafeGazeYaw({
-      cameraYaw: cameraState.yaw,
+      cameraYaw: activeCameraState.yaw,
       horizontal,
       vertical,
-      gazeLocked
+      gazeLocked: controlBehavior === 'locomotion' && gazeLocked
     });
 
     const moveDirection = new THREE.Vector3();
-    const forward = new THREE.Vector3(-Math.sin(cameraState.yaw), 0, -Math.cos(cameraState.yaw)).normalize();
+    const forward = new THREE.Vector3(-Math.sin(activeCameraState.yaw), 0, -Math.cos(activeCameraState.yaw)).normalize();
     const right = new THREE.Vector3().crossVectors(forward, worldUp).normalize();
     moveDirection.addScaledVector(forward, vertical);
     moveDirection.addScaledVector(right, horizontal);
@@ -324,23 +596,27 @@ export function createSceneAvatarController(options = {}) {
       anchor.position.y + cameraOffset,
       anchor.position.z
     );
-    cameraTarget.lerp(desiredCameraTarget, 1 - Math.exp(-delta * 8));
+    cameraTarget.lerp(desiredCameraTarget, 1 - Math.exp(-delta * 12));
 
-    const cosPitch = Math.cos(cameraState.pitch);
-    desiredCameraPosition.set(
-      cameraTarget.x + Math.sin(cameraState.yaw) * cosPitch * cameraState.distance,
-      cameraTarget.y + Math.sin(cameraState.pitch) * cameraState.distance + 0.05,
-      cameraTarget.z + Math.cos(cameraState.yaw) * cosPitch * cameraState.distance
-    );
-    camera.position.lerp(desiredCameraPosition, 1 - Math.exp(-delta * 9.6));
+    const activeCameraState = getActiveCameraState();
+    const position = resolveFollowCameraPosition({
+      target: cameraTarget,
+      yaw: activeCameraState.yaw,
+      pitch: activeCameraState.pitch,
+      distance: activeCameraState.distance
+    });
+    desiredCameraPosition.set(position.x, position.y + 0.05, position.z);
+    camera.position.lerp(desiredCameraPosition, 1 - Math.exp(-delta * 12));
     camera.lookAt(cameraTarget);
   }
 
   function update(delta) {
     const dt = Number.isFinite(delta) ? Math.min(Math.max(delta, 0), 0.05) : 0;
+    updateDestinationPointerHold(dt);
     updateMovement(dt);
     updateJump(dt);
     updateCamera(dt);
+    updateDestinationMarker(dt);
     const motion = {
       locomotion: currentLocomotion,
       airbornePhase: jumpState.phase,
@@ -357,13 +633,17 @@ export function createSceneAvatarController(options = {}) {
 
   function clearInputState() {
     activePointers.clear();
+    destinationPointerState = updateDestinationPointer(destinationPointerState, { type: 'cancel' }).state;
     pinchPrevDistance = 0;
+    lastTrackpadTime = -Infinity;
     Object.keys(keyState).forEach((key) => {
       keyState[key] = false;
     });
     locomotionElapsed = 0;
     currentLocomotionProgress = 0;
     currentGazeLockYaw = 0;
+    cancelDestination();
+    resetDestinationDeceleration();
     resetJoystick();
     if (jumpButtonUi && jumpButtonUi.btn) {
       jumpButtonUi.btn.classList.remove('is-pressed');
@@ -376,8 +656,26 @@ export function createSceneAvatarController(options = {}) {
     if (!controlEnabledFlag || !usePointer) return;
     if (event.pointerType === 'mouse' && event.button !== 0) return;
     if (event.pointerType !== 'mouse' && !useTouch) return;
-    activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    activePointers.set(event.pointerId, {
+      x: event.clientX,
+      y: event.clientY,
+      startX: event.clientX,
+      startY: event.clientY,
+      moved: false
+    });
+    if (controlMode === 'destination' && activePointers.size === 1) {
+      destinationPointerState = updateDestinationPointer(destinationPointerState, {
+        type: 'down',
+        pointerId: event.pointerId,
+        x: event.clientX,
+        y: event.clientY
+      }, { dragThreshold: clickDragThreshold }).state;
+    }
     if (activePointers.size === 2 && useTouch) {
+      const holdCancel = updateDestinationPointer(destinationPointerState, { type: 'cancel' });
+      destinationPointerState = holdCancel.state;
+      if (holdCancel.intent === 'stop') stopContinuousDestination();
+      for (const pointer of activePointers.values()) pointer.moved = true;
       pinchPrevDistance = getPinchDistance();
     }
     try { domElement.setPointerCapture(event.pointerId); } catch { /* ignore */ }
@@ -389,21 +687,37 @@ export function createSceneAvatarController(options = {}) {
     if (!prev) return;
     const dx = event.clientX - prev.x;
     const dy = event.clientY - prev.y;
-    activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    prev.x = event.clientX;
+    prev.y = event.clientY;
+    prev.moved = prev.moved || Math.hypot(event.clientX - prev.startX, event.clientY - prev.startY) > clickDragThreshold;
+    if (controlMode === 'destination') {
+      destinationPointerState = updateDestinationPointer(destinationPointerState, {
+        type: 'move',
+        pointerId: event.pointerId,
+        x: event.clientX,
+        y: event.clientY
+      }, { dragThreshold: clickDragThreshold }).state;
+    }
 
     if (activePointers.size === 1) {
-      cameraState.yaw -= dx * 0.006;
-      cameraState.pitch = THREE.MathUtils.clamp(cameraState.pitch + dy * 0.0045, -0.15, 0.75);
+      if (
+        cameraMode === 'orbit'
+        && (controlMode !== 'destination' || destinationPointerState.phase === 'drag')
+      ) {
+        cameraState.yaw -= dx * 0.006;
+        cameraState.pitch = THREE.MathUtils.clamp(cameraState.pitch + dy * 0.0045, -0.15, 0.75);
+      }
       return;
     }
     if (activePointers.size === 2 && useTouch) {
       const next = getPinchDistance();
       if (pinchPrevDistance > 0 && next > 0) {
         const ratio = pinchPrevDistance / next;
-        cameraState.distance = THREE.MathUtils.clamp(
-          cameraState.distance * ratio,
-          cameraState.minDistance,
-          cameraState.maxDistance
+        const activeCameraState = getActiveCameraState();
+        activeCameraState.distance = THREE.MathUtils.clamp(
+          activeCameraState.distance * ratio,
+          activeCameraState.minDistance,
+          activeCameraState.maxDistance
         );
       }
       pinchPrevDistance = next;
@@ -411,10 +725,34 @@ export function createSceneAvatarController(options = {}) {
   }
 
   function onPointerUp(event) {
+    const pointer = activePointers.get(event.pointerId);
+    if (controlMode === 'destination') {
+      const holdResult = updateDestinationPointer(destinationPointerState, {
+        type: 'up',
+        pointerId: event.pointerId
+      });
+      destinationPointerState = holdResult.state;
+      if (holdResult.intent === 'click' && activePointers.size === 1 && pointer && !pointer.moved) {
+        setDestinationFromPointer(event);
+      } else if (holdResult.intent === 'stop') {
+        stopContinuousDestination();
+      }
+    }
     activePointers.delete(event.pointerId);
     if (activePointers.size < 2) {
       pinchPrevDistance = 0;
     }
+    if (domElement.hasPointerCapture && domElement.hasPointerCapture(event.pointerId)) {
+      try { domElement.releasePointerCapture(event.pointerId); } catch { /* ignore */ }
+    }
+  }
+
+  function onPointerCancel(event) {
+    const holdResult = updateDestinationPointer(destinationPointerState, { type: 'cancel' });
+    destinationPointerState = holdResult.state;
+    if (holdResult.intent === 'stop') stopContinuousDestination();
+    activePointers.delete(event.pointerId);
+    if (activePointers.size < 2) pinchPrevDistance = 0;
     if (domElement.hasPointerCapture && domElement.hasPointerCapture(event.pointerId)) {
       try { domElement.releasePointerCapture(event.pointerId); } catch { /* ignore */ }
     }
@@ -432,23 +770,37 @@ export function createSceneAvatarController(options = {}) {
   function onWheel(event) {
     if (!controlEnabledFlag || !useWheel) return;
     event.preventDefault();
-    // Normalize deltaY across deltaMode (0=pixel, 1=line, 2=page).
-    const deltaModeFactor = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 400 : 1;
-    const normalizedDelta = event.deltaY * deltaModeFactor;
+    const wheelInput = classifyWheelInput(event, lastTrackpadTime);
+    lastTrackpadTime = wheelInput.lastTrackpadTime;
+    if (!wheelInput.deltaX && !wheelInput.deltaY) return;
+
+    if (cameraMode === 'orbit' && wheelInput.kind === WHEEL_INPUT_KINDS.TRACKPAD_ROTATE) {
+      cameraState.yaw += wheelInput.deltaX * 0.003;
+      cameraState.pitch = THREE.MathUtils.clamp(
+        cameraState.pitch - wheelInput.deltaY * 0.0025,
+        -0.15,
+        0.75
+      );
+      return;
+    }
+
     // Mac trackpad pinch fires wheel with ctrlKey=true and very small deltaY,
     // so amplify it; mouse wheel keeps the gentler step.
-    const step = event.ctrlKey ? normalizedDelta * 0.02 : normalizedDelta * 0.0025;
-    cameraState.distance = THREE.MathUtils.clamp(
-      cameraState.distance + step,
-      cameraState.minDistance,
-      cameraState.maxDistance
+    const step = wheelInput.kind === WHEEL_INPUT_KINDS.PINCH_ZOOM
+      ? wheelInput.deltaY * 0.02
+      : wheelInput.deltaY * 0.0025;
+    const activeCameraState = getActiveCameraState();
+    activeCameraState.distance = THREE.MathUtils.clamp(
+      activeCameraState.distance + step,
+      activeCameraState.minDistance,
+      activeCameraState.maxDistance
     );
   }
 
   // --- Keyboard ---
   function onKeyDown(event) {
     if (!controlEnabledFlag || !useKeyboard) return;
-    if (bindSpaceKey && physicsEnabled && jumpEnabledFlag && event.code === 'Space' && !event.repeat) {
+    if (bindSpaceKey && physicsEnabled && jumpEnabledFlag && profileAllowsJump && event.code === 'Space' && !event.repeat) {
       event.preventDefault();
       requestJump();
       return;
@@ -467,17 +819,18 @@ export function createSceneAvatarController(options = {}) {
   let gestureBaselineDistance = 0;
   function onGestureStart(event) {
     event.preventDefault();
-    gestureBaselineDistance = cameraState.distance;
+    gestureBaselineDistance = getActiveCameraState().distance;
   }
   function onGestureChange(event) {
     event.preventDefault();
     if (!controlEnabledFlag || !useWheel) return;
     const scale = Number(event.scale);
     if (!Number.isFinite(scale) || scale <= 0) return;
-    cameraState.distance = THREE.MathUtils.clamp(
+    const activeCameraState = getActiveCameraState();
+    activeCameraState.distance = THREE.MathUtils.clamp(
       gestureBaselineDistance / scale,
-      cameraState.minDistance,
-      cameraState.maxDistance
+      activeCameraState.minDistance,
+      activeCameraState.maxDistance
     );
   }
   function onGestureEnd(event) {
@@ -630,7 +983,7 @@ export function createSceneAvatarController(options = {}) {
   function applyJoystickVisibility() {
     if (!joystickUi || !joystickUi.base) return;
     const base = joystickUi.base;
-    const shouldShow = joystickRequestedVisible && controlEnabledFlag;
+    const shouldShow = joystickRequestedVisible && controlEnabledFlag && controlMode === 'analog';
     if (joystickHideTimer) {
       clearTimeout(joystickHideTimer);
       joystickHideTimer = 0;
@@ -668,7 +1021,7 @@ export function createSceneAvatarController(options = {}) {
   }
 
   function shouldShowJumpButton() {
-    return physicsEnabled && jumpEnabledFlag && shouldShowJoystick();
+    return physicsEnabled && jumpEnabledFlag && profileAllowsJump && shouldShowJoystick();
   }
 
   function onJumpButtonDown(event) {
@@ -768,7 +1121,7 @@ export function createSceneAvatarController(options = {}) {
   function applyJumpButtonVisibility() {
     if (!jumpButtonUi || !jumpButtonUi.btn) return;
     const btn = jumpButtonUi.btn;
-    const shouldShow = joystickRequestedVisible && controlEnabledFlag && physicsEnabled && jumpEnabledFlag;
+    const shouldShow = joystickRequestedVisible && controlEnabledFlag && physicsEnabled && jumpEnabledFlag && profileAllowsJump;
     if (jumpButtonHideTimer) {
       clearTimeout(jumpButtonHideTimer);
       jumpButtonHideTimer = 0;
@@ -812,7 +1165,7 @@ export function createSceneAvatarController(options = {}) {
     domElement.addEventListener('pointerdown', onPointerDown);
     domElement.addEventListener('pointermove', onPointerMove);
     domElement.addEventListener('pointerup', onPointerUp);
-    domElement.addEventListener('pointercancel', onPointerUp);
+    domElement.addEventListener('pointercancel', onPointerCancel);
     domElement.addEventListener('wheel', onWheel, { passive: false });
     domElement.addEventListener('gesturestart', onGestureStart, { passive: false });
     domElement.addEventListener('gesturechange', onGestureChange, { passive: false });
@@ -844,14 +1197,73 @@ export function createSceneAvatarController(options = {}) {
   function setCameraDistance(distance) {
     const next = Number(distance);
     if (!Number.isFinite(next)) return;
-    cameraState.distance = THREE.MathUtils.clamp(next, cameraState.minDistance, cameraState.maxDistance);
+    const activeCameraState = getActiveCameraState();
+    activeCameraState.distance = THREE.MathUtils.clamp(next, activeCameraState.minDistance, activeCameraState.maxDistance);
   }
 
+  function resetPosition(position = {}) {
+    const nextPosition = position && typeof position === 'object' ? position : {};
+    const x = Number.isFinite(nextPosition.x) ? nextPosition.x : 0;
+    const z = Number.isFinite(nextPosition.z) ? nextPosition.z : 0;
+    const y = Number.isFinite(nextPosition.y) ? nextPosition.y : GROUND_Y;
+    clearInputState();
+    anchor.position.set(x, y, z);
+    if (physicsEnabled) resetJumpState();
+    currentLocomotion = 'idle';
+    currentSpeed = 0;
+    target.rotation.y = Number.isFinite(nextPosition.rotationY) ? nextPosition.rotationY : 0;
+  }
+
+  const controlPackages = createControlPackageRegistry();
+  let activeCameraPackage = '';
+  let activeControlPackage = '';
+  controlPackages.registerAll([
+    {
+      id: CONTROL_PACKAGE_IDS.THIRD_PERSON_CAMERA, type: 'camera', install: () => ({
+        activate() { cameraMode = 'orbit'; activeCameraPackage = CONTROL_PACKAGE_IDS.THIRD_PERSON_CAMERA; },
+        deactivate() { if (activeCameraPackage === CONTROL_PACKAGE_IDS.THIRD_PERSON_CAMERA) activeCameraPackage = ''; }
+      })
+    },
+    {
+      id: CONTROL_PACKAGE_IDS.TOP_DOWN_CAMERA, type: 'camera', install: () => ({
+        activate() { cameraMode = 'fixed'; activeCameraPackage = CONTROL_PACKAGE_IDS.TOP_DOWN_CAMERA; },
+        deactivate() { if (activeCameraPackage === CONTROL_PACKAGE_IDS.TOP_DOWN_CAMERA) activeCameraPackage = ''; }
+      })
+    },
+    {
+      id: CONTROL_PACKAGE_IDS.LOCOMOTION_CONTROL, type: 'control', install: () => ({
+        activate() { controlMode = 'analog'; controlBehavior = 'locomotion'; profileAllowsJump = true; activeControlPackage = CONTROL_PACKAGE_IDS.LOCOMOTION_CONTROL; applyJoystickVisibility(); applyJumpButtonVisibility(); },
+        deactivate() { if (activeControlPackage === CONTROL_PACKAGE_IDS.LOCOMOTION_CONTROL) activeControlPackage = ''; }
+      })
+    },
+    {
+      id: CONTROL_PACKAGE_IDS.CAMERA_RELATIVE_CONTROL, type: 'control', install: () => ({
+        activate() { controlMode = 'analog'; controlBehavior = 'camera-relative'; profileAllowsJump = true; activeControlPackage = CONTROL_PACKAGE_IDS.CAMERA_RELATIVE_CONTROL; applyJoystickVisibility(); applyJumpButtonVisibility(); },
+        deactivate() { if (activeControlPackage === CONTROL_PACKAGE_IDS.CAMERA_RELATIVE_CONTROL) activeControlPackage = ''; }
+      })
+    },
+    {
+      id: CONTROL_PACKAGE_IDS.CLICK_TO_MOVE_CONTROL, type: 'control', install: () => ({
+        activate() { controlMode = 'destination'; profileAllowsJump = false; activeControlPackage = CONTROL_PACKAGE_IDS.CLICK_TO_MOVE_CONTROL; applyJoystickVisibility(); applyJumpButtonVisibility(); },
+        deactivate() { if (activeControlPackage === CONTROL_PACKAGE_IDS.CLICK_TO_MOVE_CONTROL) activeControlPackage = ''; cancelDestination(); }
+      })
+    }
+  ]);
+  const controlProfiles = createControlProfileRegistry({
+    packages: controlPackages,
+    profiles: CONTROL_PROFILES,
+    clearInput: clearInputState
+  });
+  controlProfiles.installAll();
+  controlProfiles.activate(initialProfile);
+
   function dispose() {
+    controlProfiles.dispose();
+    controlPackages.dispose();
     domElement.removeEventListener('pointerdown', onPointerDown);
     domElement.removeEventListener('pointermove', onPointerMove);
     domElement.removeEventListener('pointerup', onPointerUp);
-    domElement.removeEventListener('pointercancel', onPointerUp);
+    domElement.removeEventListener('pointercancel', onPointerCancel);
     domElement.removeEventListener('wheel', onWheel);
     domElement.removeEventListener('gesturestart', onGestureStart);
     domElement.removeEventListener('gesturechange', onGestureChange);
@@ -901,6 +1313,9 @@ export function createSceneAvatarController(options = {}) {
     }
     domElement.style.touchAction = previousTouchAction;
     clearInputState();
+    scene.remove(controlWorldRoot);
+    destinationMarker.geometry.dispose();
+    destinationMarker.material.dispose();
     scene.remove(anchor);
   }
 
@@ -909,14 +1324,19 @@ export function createSceneAvatarController(options = {}) {
     setEnableControl,
     setEnableJump,
     setCameraDistance,
+    resetPosition,
     setJoystickVisible,
+    setProfile: controlProfiles.activate,
     jump: requestJump,
     dispose,
+    controlPackages,
+    controlProfiles,
     get anchor() { return anchor; },
     get target() { return target; },
     get camera() { return camera; },
     get cameraTarget() { return cameraTarget; },
-    get cameraState() { return { ...cameraState }; },
+    get cameraState() { return { ...getActiveCameraState() }; },
+    get activeProfile() { return controlProfiles.activeId; },
     get enableControl() { return controlEnabledFlag; },
     get enableJump() { return jumpEnabledFlag; },
     get physicsMode() { return physicsEnabled ? 'builtin' : 'none'; },

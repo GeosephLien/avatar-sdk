@@ -37,7 +37,7 @@ template.innerHTML = `
     <section class="creator-panel is-loading" role="dialog" aria-modal="true" aria-label="AC3 Avatar Creator" aria-hidden="true">
       <iframe class="creator-frame" title="AC3 Avatar Creator" allow="clipboard-read; clipboard-write" referrerpolicy="strict-origin"></iframe>
       <button class="creator-close-button" type="button" aria-label="Close Creator" title="Close Creator">
-        <img src="${new URL('./Icon_close.svg', import.meta.url).href}" alt="">
+        <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#e3e3e3" aria-hidden="true"><path d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"/></svg>
       </button>
     </section>
   </div>
