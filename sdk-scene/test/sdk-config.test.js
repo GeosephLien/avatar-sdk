@@ -16,7 +16,7 @@ test('uses the canonical public deployment without host configuration', () => {
 
   assert.deepEqual(config, {
     assetBaseUrl: `${publicOrigin}/assets`,
-    creatorUrl: `${publicOrigin}/sdk-scene/apps/avatar-creator/index.html?embedded=1&uiMode=modal`
+    creatorUrl: `${publicOrigin}/avatar-creator/index.html`
   });
 });
 

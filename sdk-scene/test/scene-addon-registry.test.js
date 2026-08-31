@@ -102,3 +102,78 @@ test('recognizes external unmounts and disposes all registry state', () => {
   assert.deepEqual(registry.availableIds, []);
   assert.throws(() => registry.register(createDefinition('late-addon')), /disposed/);
 });
+
+test('publishes portable metadata with a readable fallback label', () => {
+  const { registry } = createHarness();
+  registry.registerAll([
+    { ...createDefinition('named-addon'), label: 'Named Addon', defaultEnabled: true },
+    createDefinition('fallback-addon')
+  ]);
+
+  assert.deepEqual(registry.availableAddons, [
+    { id: 'named-addon', label: 'Named Addon', defaultEnabled: true },
+    { id: 'fallback-addon', label: 'Fallback Addon', defaultEnabled: false }
+  ]);
+  assert.equal(Object.isFrozen(registry.availableAddons), true);
+  assert.equal(Object.isFrozen(registry.availableAddons[0]), true);
+});
+
+test('subscribers receive immutable committed lifecycle snapshots', () => {
+  const { registry } = createHarness();
+  const snapshots = [];
+  const unsubscribe = registry.subscribe((snapshot) => snapshots.push(snapshot));
+
+  registry.register({ ...createDefinition('test-addon'), label: 'Test Addon' });
+  registry.install('test-addon');
+  registry.uninstall('test-addon');
+  unsubscribe();
+  registry.unregister('test-addon');
+
+  assert.deepEqual(snapshots.map((snapshot) => snapshot.installedIds), [[], [], ['test-addon'], []]);
+  assert.deepEqual(snapshots[1].availableAddons, [
+    { id: 'test-addon', label: 'Test Addon', defaultEnabled: false }
+  ]);
+  assert.equal(Object.isFrozen(snapshots[1]), true);
+  assert.equal(Object.isFrozen(snapshots[1].installedIds), true);
+});
+
+test('isolates subscriber failures and batches installAll rollback notifications', () => {
+  const { registry } = createHarness();
+  registry.registerAll([
+    createDefinition('healthy-addon'),
+    { id: 'broken-addon', create() { throw new Error('package failed'); } }
+  ]);
+  const snapshots = [];
+  registry.subscribe(() => { throw new Error('listener failed'); });
+  registry.subscribe((snapshot) => snapshots.push(snapshot.installedIds));
+
+  assert.throws(() => registry.installAll(), /package failed/);
+  assert.deepEqual(snapshots, [[]]);
+  assert.doesNotThrow(() => registry.install('healthy-addon'));
+  assert.deepEqual(snapshots, [[], ['healthy-addon']]);
+});
+
+test('detects an externally unmounted handle and publishes the corrected state', () => {
+  const { registry } = createHarness();
+  registry.register(createDefinition('test-addon'));
+  const handle = registry.install('test-addon');
+  const snapshots = [];
+  registry.subscribe((snapshot) => snapshots.push(snapshot.installedIds));
+
+  handle.unmount();
+  assert.equal(registry.isInstalled('test-addon'), false);
+  assert.deepEqual(snapshots, [['test-addon'], []]);
+});
+
+test('publishes unregister as one committed mutation', () => {
+  const { registry } = createHarness();
+  registry.register(createDefinition('test-addon'));
+  registry.install('test-addon');
+  const snapshots = [];
+  registry.subscribe((snapshot) => snapshots.push(snapshot));
+
+  registry.unregister('test-addon');
+
+  assert.equal(snapshots.length, 2);
+  assert.deepEqual(snapshots[1], { availableAddons: [], installedIds: [] });
+});

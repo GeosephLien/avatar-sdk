@@ -1,0 +1,39 @@
+import { normalizeCreatorState } from './creator-state.js';
+
+const AVATAR_FIELDS = ['fileName', 'createdAt', 'lastUsedAt', 'vrmUrl', 'thumbnailUrl', 'expiresAt'];
+
+export function resolveCreatorUrl(value, baseUrl) {
+  const url = new URL(String(value || ''), baseUrl);
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new TypeError('Creator URL must use HTTP or HTTPS.');
+  }
+  return url;
+}
+
+export function normalizeAvatarDescriptor(value) {
+  const avatar = value && typeof value === 'object' ? value : {};
+  const descriptor = Object.fromEntries(
+    AVATAR_FIELDS
+      .filter((field) => typeof avatar[field] === 'string' || (field === 'expiresAt' && Number.isFinite(avatar[field])))
+      .map((field) => [field, avatar[field]])
+  );
+  try {
+    const creatorState = normalizeCreatorState(avatar.creatorState);
+    if (creatorState) descriptor.creatorState = creatorState;
+  } catch (error) {
+    console.warn('Ignoring invalid Creator state in avatar descriptor.', error);
+  }
+  return descriptor;
+}
+
+export function isTrustedCreatorMessage(event, frameWindow, expectedOrigin, requestId) {
+  const message = event?.data;
+  return Boolean(
+    event?.origin === expectedOrigin
+    && event?.source === frameWindow
+    && message
+    && message.protocol === 'ac3'
+    && String(message.type || '').startsWith('ac3:')
+    && (!message.requestId || message.requestId === requestId)
+  );
+}

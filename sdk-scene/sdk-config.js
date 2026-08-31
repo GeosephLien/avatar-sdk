@@ -2,7 +2,7 @@ const PUBLIC_DEPLOYMENT_ORIGIN = 'https://ac3-website.pages.dev';
 
 const PUBLIC_DEPLOYMENT = Object.freeze({
   assetBaseUrl: `${PUBLIC_DEPLOYMENT_ORIGIN}/assets`,
-  creatorUrl: `${PUBLIC_DEPLOYMENT_ORIGIN}/sdk-scene/apps/avatar-creator/index.html?embedded=1&uiMode=modal`
+  creatorUrl: `${PUBLIC_DEPLOYMENT_ORIGIN}/avatar-creator/index.html`
 });
 
 export function getAvatarSdkConfig() {

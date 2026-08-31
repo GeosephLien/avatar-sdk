@@ -4,7 +4,7 @@ import test from 'node:test';
 import {
   calculateCreatorPanelSize,
   createCreatorFrameLayout
-} from '../components/avatar-creator-entry/creator-frame-layout.js';
+} from '../components/avatar-creator-adapter/creator-frame-layout.js';
 
 test('keeps the legacy 16:9 anchor on desktop', () => {
   const size = calculateCreatorPanelSize({ viewportWidth: 1440, viewportHeight: 900 });

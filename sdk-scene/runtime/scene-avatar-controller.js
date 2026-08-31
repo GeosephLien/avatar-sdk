@@ -44,6 +44,7 @@ import {
   CONTROL_PROFILE_IDS,
   CONTROL_PROFILES
 } from './control-package-definitions.js';
+import { installCanvasCursorControl } from './canvas-cursor-control.js';
 
 const TESTED_MIN = 158;
 const TESTED_MAX = 164;
@@ -91,6 +92,7 @@ export function createSceneAvatarController(options = {}) {
     jumpVelocity = 6.97,
     groundY = 0,
     input = {},
+    onPointerClick = null,
     uiContainer = domElement?.parentElement,
     keyboardTarget = globalThis.window,
     moveSpeed = 1.6,
@@ -133,6 +135,11 @@ export function createSceneAvatarController(options = {}) {
   if (!domElement || typeof domElement.addEventListener !== 'function') {
     throw new Error('[viverse-me] createSceneAvatarController requires options.domElement.');
   }
+  if (onPointerClick !== null && typeof onPointerClick !== 'function') {
+    throw new Error('[viverse-me] options.onPointerClick must be a function.');
+  }
+
+  const cursorControl = installCanvasCursorControl({ element: domElement });
 
   const useKeyboard = input.keyboard !== false;
   const usePointer = input.pointer !== false;
@@ -633,6 +640,7 @@ export function createSceneAvatarController(options = {}) {
 
   function clearInputState() {
     activePointers.clear();
+    cursorControl.setCameraRotating(false);
     destinationPointerState = updateDestinationPointer(destinationPointerState, { type: 'cancel' }).state;
     pinchPrevDistance = 0;
     lastTrackpadTime = -Infinity;
@@ -672,6 +680,7 @@ export function createSceneAvatarController(options = {}) {
       }, { dragThreshold: clickDragThreshold }).state;
     }
     if (activePointers.size === 2 && useTouch) {
+      cursorControl.setCameraRotating(false);
       const holdCancel = updateDestinationPointer(destinationPointerState, { type: 'cancel' });
       destinationPointerState = holdCancel.state;
       if (holdCancel.intent === 'stop') stopContinuousDestination();
@@ -700,10 +709,12 @@ export function createSceneAvatarController(options = {}) {
     }
 
     if (activePointers.size === 1) {
-      if (
+      const rotatingCamera = (
         cameraMode === 'orbit'
         && (controlMode !== 'destination' || destinationPointerState.phase === 'drag')
-      ) {
+      );
+      cursorControl.setCameraRotating(rotatingCamera);
+      if (rotatingCamera) {
         cameraState.yaw -= dx * 0.006;
         cameraState.pitch = THREE.MathUtils.clamp(cameraState.pitch + dy * 0.0045, -0.15, 0.75);
       }
@@ -725,14 +736,22 @@ export function createSceneAvatarController(options = {}) {
   }
 
   function onPointerUp(event) {
+    cursorControl.setCameraRotating(false);
     const pointer = activePointers.get(event.pointerId);
+    const singlePointerClick = activePointers.size === 1 && pointer && !pointer.moved;
+    let clickIntent = controlMode !== 'destination' && singlePointerClick;
+    let holdResult = null;
     if (controlMode === 'destination') {
-      const holdResult = updateDestinationPointer(destinationPointerState, {
+      holdResult = updateDestinationPointer(destinationPointerState, {
         type: 'up',
         pointerId: event.pointerId
       });
       destinationPointerState = holdResult.state;
-      if (holdResult.intent === 'click' && activePointers.size === 1 && pointer && !pointer.moved) {
+      clickIntent = holdResult.intent === 'click' && singlePointerClick;
+    }
+    const clickConsumed = clickIntent && onPointerClick?.(event) === true;
+    if (controlMode === 'destination') {
+      if (clickIntent && !clickConsumed) {
         setDestinationFromPointer(event);
       } else if (holdResult.intent === 'stop') {
         stopContinuousDestination();
@@ -748,6 +767,7 @@ export function createSceneAvatarController(options = {}) {
   }
 
   function onPointerCancel(event) {
+    cursorControl.setCameraRotating(false);
     const holdResult = updateDestinationPointer(destinationPointerState, { type: 'cancel' });
     destinationPointerState = holdResult.state;
     if (holdResult.intent === 'stop') stopContinuousDestination();
@@ -756,6 +776,10 @@ export function createSceneAvatarController(options = {}) {
     if (domElement.hasPointerCapture && domElement.hasPointerCapture(event.pointerId)) {
       try { domElement.releasePointerCapture(event.pointerId); } catch { /* ignore */ }
     }
+  }
+
+  function onContextMenu(event) {
+    event.preventDefault();
   }
 
   function getPinchDistance() {
@@ -1166,6 +1190,7 @@ export function createSceneAvatarController(options = {}) {
     domElement.addEventListener('pointermove', onPointerMove);
     domElement.addEventListener('pointerup', onPointerUp);
     domElement.addEventListener('pointercancel', onPointerCancel);
+    domElement.addEventListener('contextmenu', onContextMenu);
     domElement.addEventListener('wheel', onWheel, { passive: false });
     domElement.addEventListener('gesturestart', onGestureStart, { passive: false });
     domElement.addEventListener('gesturechange', onGestureChange, { passive: false });
@@ -1221,7 +1246,7 @@ export function createSceneAvatarController(options = {}) {
     {
       id: CONTROL_PACKAGE_IDS.THIRD_PERSON_CAMERA, type: 'camera', install: () => ({
         activate() { cameraMode = 'orbit'; activeCameraPackage = CONTROL_PACKAGE_IDS.THIRD_PERSON_CAMERA; },
-        deactivate() { if (activeCameraPackage === CONTROL_PACKAGE_IDS.THIRD_PERSON_CAMERA) activeCameraPackage = ''; }
+        deactivate() { cursorControl.setCameraRotating(false); if (activeCameraPackage === CONTROL_PACKAGE_IDS.THIRD_PERSON_CAMERA) activeCameraPackage = ''; }
       })
     },
     {
@@ -1237,15 +1262,15 @@ export function createSceneAvatarController(options = {}) {
       })
     },
     {
-      id: CONTROL_PACKAGE_IDS.CAMERA_RELATIVE_CONTROL, type: 'control', install: () => ({
-        activate() { controlMode = 'analog'; controlBehavior = 'camera-relative'; profileAllowsJump = true; activeControlPackage = CONTROL_PACKAGE_IDS.CAMERA_RELATIVE_CONTROL; applyJoystickVisibility(); applyJumpButtonVisibility(); },
-        deactivate() { if (activeControlPackage === CONTROL_PACKAGE_IDS.CAMERA_RELATIVE_CONTROL) activeControlPackage = ''; }
+      id: CONTROL_PACKAGE_IDS.LOCOMOTION_NO_GAZE_CONTROL, type: 'control', install: () => ({
+        activate() { controlMode = 'analog'; controlBehavior = 'locomotion-no-gaze'; profileAllowsJump = true; activeControlPackage = CONTROL_PACKAGE_IDS.LOCOMOTION_NO_GAZE_CONTROL; applyJoystickVisibility(); applyJumpButtonVisibility(); },
+        deactivate() { if (activeControlPackage === CONTROL_PACKAGE_IDS.LOCOMOTION_NO_GAZE_CONTROL) activeControlPackage = ''; }
       })
     },
     {
       id: CONTROL_PACKAGE_IDS.CLICK_TO_MOVE_CONTROL, type: 'control', install: () => ({
-        activate() { controlMode = 'destination'; profileAllowsJump = false; activeControlPackage = CONTROL_PACKAGE_IDS.CLICK_TO_MOVE_CONTROL; applyJoystickVisibility(); applyJumpButtonVisibility(); },
-        deactivate() { if (activeControlPackage === CONTROL_PACKAGE_IDS.CLICK_TO_MOVE_CONTROL) activeControlPackage = ''; cancelDestination(); }
+        activate() { controlMode = 'destination'; cursorControl.setClickToMoveActive(true); profileAllowsJump = false; activeControlPackage = CONTROL_PACKAGE_IDS.CLICK_TO_MOVE_CONTROL; applyJoystickVisibility(); applyJumpButtonVisibility(); },
+        deactivate() { cursorControl.setClickToMoveActive(false); if (activeControlPackage === CONTROL_PACKAGE_IDS.CLICK_TO_MOVE_CONTROL) activeControlPackage = ''; cancelDestination(); }
       })
     }
   ]);
@@ -1260,10 +1285,12 @@ export function createSceneAvatarController(options = {}) {
   function dispose() {
     controlProfiles.dispose();
     controlPackages.dispose();
+    cursorControl.dispose();
     domElement.removeEventListener('pointerdown', onPointerDown);
     domElement.removeEventListener('pointermove', onPointerMove);
     domElement.removeEventListener('pointerup', onPointerUp);
     domElement.removeEventListener('pointercancel', onPointerCancel);
+    domElement.removeEventListener('contextmenu', onContextMenu);
     domElement.removeEventListener('wheel', onWheel);
     domElement.removeEventListener('gesturestart', onGestureStart);
     domElement.removeEventListener('gesturechange', onGestureChange);
@@ -1314,8 +1341,10 @@ export function createSceneAvatarController(options = {}) {
     domElement.style.touchAction = previousTouchAction;
     clearInputState();
     scene.remove(controlWorldRoot);
-    destinationMarker.geometry.dispose();
-    destinationMarker.material.dispose();
+    destinationRing.geometry.dispose();
+    destinationRing.material.dispose();
+    destinationDot.geometry.dispose();
+    destinationDot.material.dispose();
     scene.remove(anchor);
   }
 
@@ -1327,6 +1356,7 @@ export function createSceneAvatarController(options = {}) {
     resetPosition,
     setJoystickVisible,
     setProfile: controlProfiles.activate,
+    setControlProfile: controlProfiles.activate,
     jump: requestJump,
     dispose,
     controlPackages,
@@ -1337,6 +1367,7 @@ export function createSceneAvatarController(options = {}) {
     get cameraTarget() { return cameraTarget; },
     get cameraState() { return { ...getActiveCameraState() }; },
     get activeProfile() { return controlProfiles.activeId; },
+    get activeControlProfile() { return controlProfiles.activeId; },
     get enableControl() { return controlEnabledFlag; },
     get enableJump() { return jumpEnabledFlag; },
     get physicsMode() { return physicsEnabled ? 'builtin' : 'none'; },

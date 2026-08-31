@@ -4,7 +4,7 @@ const COUNTER_MARKUP = `
       display: block;
       pointer-events: none;
       color: #121417;
-      font-family: "Noto Sans", sans-serif;
+      font-family: "Roboto", sans-serif;
     }
 
     * { box-sizing: border-box; }
@@ -78,7 +78,7 @@ const COMPLETION_MARKUP = `
       display: block;
       pointer-events: none;
       color: #121417;
-      font-family: "Noto Sans", sans-serif;
+      font-family: "Roboto", sans-serif;
     }
     * { box-sizing: border-box; }
     .completion {
@@ -120,7 +120,7 @@ const COMPLETION_MARKUP = `
 `;
 
 export function createGemCollectorUi(options = {}) {
-  const { hudRoot, overlayRoot, signal, onRestart } = options;
+  const { hudRoot, overlayRoot, interaction, signal, onRestart } = options;
   if (!hudRoot || typeof hudRoot.appendChild !== 'function' || !overlayRoot || typeof overlayRoot.appendChild !== 'function') {
     throw new Error('createGemCollectorUi requires DOM-compatible HUD and overlay roots.');
   }
@@ -143,6 +143,18 @@ export function createGemCollectorUi(options = {}) {
   let disposed = false;
   let countPulseTimer = null;
   let completionTimer = null;
+  let releaseInteractionLock = null;
+
+  function lockInteraction() {
+    if (releaseInteractionLock || typeof interaction?.acquireLock !== 'function') return;
+    const release = interaction.acquireLock();
+    if (typeof release === 'function') releaseInteractionLock = release;
+  }
+
+  function unlockInteraction() {
+    releaseInteractionLock?.();
+    releaseInteractionLock = null;
+  }
 
   function clearCountPulse() {
     if (countPulseTimer !== null) clearTimeout(countPulseTimer);
@@ -156,7 +168,9 @@ export function createGemCollectorUi(options = {}) {
   }
 
   function handleRestart() {
-    if (!disposed) onRestart();
+    if (disposed) return;
+    unlockInteraction();
+    onRestart();
   }
 
   restartButton.addEventListener('click', handleRestart, { signal });
@@ -168,12 +182,14 @@ export function createGemCollectorUi(options = {}) {
     if (!state.completed) {
       clearCompletionTimer();
       completion.hidden = true;
+      unlockInteraction();
     } else if (!wasCompleted) {
       completion.hidden = true;
       clearCompletionTimer();
       completionTimer = setTimeout(() => {
         completionTimer = null;
         if (disposed) return;
+        lockInteraction();
         completion.hidden = false;
         restartButton.focus({ preventScroll: true });
       }, 780);
@@ -197,6 +213,7 @@ export function createGemCollectorUi(options = {}) {
     if (disposed) return;
     disposed = true;
     restartButton.removeEventListener('click', handleRestart);
+    unlockInteraction();
     clearCountPulse();
     clearCompletionTimer();
     counterHost.remove();

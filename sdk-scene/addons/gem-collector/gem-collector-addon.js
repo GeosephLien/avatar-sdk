@@ -1,6 +1,6 @@
 import { createGemGame } from './gem-game-state.js?v=20260827-plus-one-fade';
-import { createGemCollectorUi } from './gem-ui.js?v=20260828-addon-ui-slots';
-import { createGemWorld } from './gem-world.js?v=20260827-plus-one-fade';
+import { createGemCollectorUi } from './gem-ui.js?v=20260831-result-lock';
+import { createGemWorld } from './gem-world.js?v=20260828-roboto';
 import { createGemCollectionAudio } from './gem-audio.js?v=20260827-plus-one-fade';
 
 export function createGemCollectorAddon(options = {}) {
@@ -38,6 +38,7 @@ export function createGemCollectorAddon(options = {}) {
         ui = createGemCollectorUi({
           hudRoot: context.hudRoot || context.uiRoot,
           overlayRoot: context.uiRoot,
+          interaction: context.interaction,
           signal: context.signal,
           onRestart
         });

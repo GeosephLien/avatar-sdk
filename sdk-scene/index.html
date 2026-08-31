@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="description" content="Create and play with a portable VRM avatar.">
   <title>VIVERSE Avatar</title>
-  <link rel="stylesheet" href="./fonts/noto-sans/v1/noto-sans.css">
-  <link rel="stylesheet" href="./sdk-scene.css?v=20260828-scene-menu">
+  <link rel="stylesheet" href="./fonts/roboto/v1/roboto.css">
+  <link rel="stylesheet" href="./sdk-scene.css?v=20260828-roboto">
   <script type="importmap">
     {
       "imports": {
@@ -17,21 +17,22 @@
       }
     }
   </script>
-  <script type="module" src="./components/avatar-creator-entry/avatar-creator-entry.js?v=20260823-local-avatar"></script>
+  <script type="module" src="./components/avatar-creator-adapter/avatar-creator-adapter.js?v=20260828-roboto"></script>
 </head>
 <body>
   <main class="scene-shell" aria-label="VIVERSE Avatar scene">
     <canvas id="landing-scene-canvas" class="scene-canvas" aria-label="VRM scene"></canvas>
 
     <header class="top-bar">
-      <avatar-creator-entry></avatar-creator-entry>
+      <avatar-creator-adapter></avatar-creator-adapter>
       <div class="top-bar-actions">
         <div class="addon-hud-slot" aria-label="Scene addon status"></div>
-        <sdk-scene-menu></sdk-scene-menu>
+        <addon-loader disabled></addon-loader>
+        <input-profile-dropdown disabled></input-profile-dropdown>
       </div>
     </header>
     <div class="addon-overlay-layer"></div>
   </main>
-  <script type="module" src="./sdk-scene.js?v=20260828-scene-menu"></script>
+  <script type="module" src="./sdk-scene.js?v=20260831-target-hud"></script>
 </body>
 </html>

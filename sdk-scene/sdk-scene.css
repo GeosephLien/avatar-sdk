@@ -1,13 +1,9 @@
 :root {
   color-scheme: light;
-  font-family: "Noto Sans", sans-serif;
+  font-family: "Roboto", sans-serif;
   font-weight: 400;
-  --ink: #121417;
   --paper: #f4f6f1;
-  --signal: #73eaff;
   --signal-gradient: linear-gradient(90deg, #73eaff 5%, #01b0e0 100%);
-  --line: rgba(18, 20, 23, 0.16);
-  --shadow: 0 18px 48px rgba(18, 20, 23, 0.16);
 }
 
 * { box-sizing: border-box; }
@@ -43,6 +39,9 @@ button { letter-spacing: 0; }
   height: 100%;
   cursor: grab;
   touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .top-bar {
@@ -57,159 +56,9 @@ button { letter-spacing: 0; }
   pointer-events: none;
 }
 
-.top-bar:has(avatar-creator-entry[open]) { z-index: 90; }
-.top-bar:has(sdk-scene-menu[panel-open]) { z-index: 80; }
+.top-bar:has(avatar-creator-adapter[open]) { z-index: 90; }
 
-avatar-creator-entry { pointer-events: auto; }
-
-sdk-scene-menu {
-  position: relative;
-  display: block;
-  color: var(--ink);
-}
-
-sdk-scene-menu .sdk-scene-menu-btn {
-  display: grid;
-  width: 40px;
-  height: 40px;
-  padding: 8px;
-  border: 0;
-  border-radius: 0;
-  place-items: center;
-  color: #fff;
-  background: transparent;
-  box-shadow: none;
-  cursor: pointer;
-}
-
-sdk-scene-menu .sdk-scene-menu-btn:hover,
-sdk-scene-menu .control-settings-close:hover { color: var(--signal); }
-
-sdk-scene-menu .sdk-scene-menu-btn:focus-visible,
-sdk-scene-menu button:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
-
-sdk-scene-menu .sdk-scene-menu-btn svg,
-sdk-scene-menu .control-settings-close svg { width: 24px; height: 24px; fill: currentColor; }
-
-sdk-scene-menu .sdk-scene-menu-dropdown {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  z-index: 2;
-  width: max-content;
-  min-width: 180px;
-  padding: 6px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--paper) 98%, transparent);
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(14px);
-}
-
-sdk-scene-menu .control-settings-btn {
-  width: 100%;
-  min-height: 40px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 5px;
-  color: var(--ink);
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-}
-
-sdk-scene-menu .control-settings-btn:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); }
-
-sdk-scene-menu .control-settings-modal { position: fixed; inset: 0; z-index: 1; display: grid; place-items: center; padding: 20px; }
-sdk-scene-menu .control-settings-backdrop { position: absolute; inset: 0; background: rgba(24, 28, 38, 0.48); backdrop-filter: blur(5px); }
-
-sdk-scene-menu .control-settings-panel {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  width: min(520px, 100%);
-  max-height: min(90vh, 560px);
-  padding: 28px;
-  gap: 22px;
-  overflow: auto;
-  border: 1px solid rgba(255, 255, 255, 0.7);
-  border-radius: 8px;
-  background: var(--paper);
-  box-shadow: 0 24px 72px rgba(18, 20, 23, 0.3);
-}
-
-sdk-scene-menu h2 { margin: 0; padding-right: 44px; font-size: 24px; line-height: 1.25; }
-
-sdk-scene-menu .control-settings-close {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  display: grid;
-  width: 40px;
-  height: 40px;
-  padding: 8px;
-  border: 0;
-  border-radius: 0;
-  place-items: center;
-  color: var(--ink);
-  background: transparent;
-  cursor: pointer;
-}
-
-sdk-scene-menu .setting-group { display: grid; gap: 10px; }
-sdk-scene-menu .setting-label { margin: 0; color: color-mix(in srgb, var(--ink) 64%, transparent); font-size: 12px; font-weight: 700; text-transform: uppercase; }
-sdk-scene-menu .camera-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
-
-sdk-scene-menu .camera-options button {
-  min-width: 0;
-  min-height: 42px;
-  padding: 0 12px;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  color: color-mix(in srgb, var(--ink) 68%, transparent);
-  background: transparent;
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-sdk-scene-menu .camera-options button.is-active { border-color: var(--ink); color: #fff; background: var(--ink); }
-
-sdk-scene-menu .control-toggle {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 38px minmax(0, 1fr);
-  align-items: center;
-  min-height: 42px;
-  gap: 10px;
-  color: color-mix(in srgb, var(--ink) 48%, transparent);
-  font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-sdk-scene-menu .control-toggle > span:first-child { text-align: right; }
-sdk-scene-menu .control-toggle > span:last-child { text-align: left; }
-sdk-scene-menu .control-toggle > span.is-active { color: var(--ink); font-weight: 700; }
-sdk-scene-menu .control-toggle input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
-sdk-scene-menu .toggle-track { position: relative; width: 36px; height: 22px; border-radius: 11px; background: color-mix(in srgb, var(--ink) 20%, transparent); }
-
-sdk-scene-menu .toggle-track::after {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 4px rgba(18, 20, 23, 0.24);
-  content: '';
-  transition: transform 160ms ease;
-}
-
-sdk-scene-menu .control-toggle input:checked + .toggle-track { background: var(--ink); }
-sdk-scene-menu .control-toggle input:checked + .toggle-track::after { transform: translateX(14px); }
-sdk-scene-menu .control-toggle input:focus-visible + .toggle-track { outline: 2px solid var(--signal); outline-offset: 2px; }
+avatar-creator-adapter { pointer-events: auto; }
 
 .top-bar-actions,
 .addon-hud-slot {
@@ -246,11 +95,4 @@ sdk-scene-menu .control-toggle input:focus-visible + .toggle-track { outline: 2p
   .top-bar { top: 14px; right: 14px; left: 14px; }
   .top-bar-actions,
   .addon-hud-slot { gap: 6px; }
-  sdk-scene-menu .control-settings-modal { padding: 14px; }
-  sdk-scene-menu .control-settings-panel { padding: 24px 18px; gap: 20px; }
-  sdk-scene-menu .control-toggle { grid-template-columns: minmax(0, 1fr) 38px minmax(0, 1fr); gap: 7px; font-size: 12px; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  sdk-scene-menu .toggle-track::after { transition: none; }
 }

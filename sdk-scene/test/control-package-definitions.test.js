@@ -12,19 +12,19 @@ test('exposes five semantic package IDs and composes the four supported profiles
     'third-person-camera',
     'top-down-camera',
     'locomotion-control',
-    'camera-relative-control',
+    'locomotion-no-gaze-control',
     'click-to-move-control'
   ]);
   assert.deepEqual(Object.values(CONTROL_PROFILE_IDS), [
     'third-person-locomotion',
     'third-person-click-to-move',
-    'top-down-camera-relative',
+    'top-down-locomotion-no-gaze',
     'top-down-click-to-move'
   ]);
   assert.deepEqual(CONTROL_PROFILES, {
     'third-person-locomotion': { camera: 'third-person-camera', control: 'locomotion-control' },
     'third-person-click-to-move': { camera: 'third-person-camera', control: 'click-to-move-control' },
-    'top-down-camera-relative': { camera: 'top-down-camera', control: 'camera-relative-control' },
+    'top-down-locomotion-no-gaze': { camera: 'top-down-camera', control: 'locomotion-no-gaze-control' },
     'top-down-click-to-move': { camera: 'top-down-camera', control: 'click-to-move-control' }
   });
 });

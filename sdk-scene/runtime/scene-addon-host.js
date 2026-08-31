@@ -24,6 +24,8 @@ export function createSceneAddonHost(options = {}) {
     createUiRoot,
     createHudRoot = null,
     player,
+    input = null,
+    interaction = null,
     onError = defaultErrorHandler
   } = options;
 
@@ -44,6 +46,9 @@ export function createSceneAddonHost(options = {}) {
   if (createHudRoot) assertFunction(createHudRoot, 'createSceneAddonHost options.createHudRoot must be a function.');
   if (!player || typeof player.getPosition !== 'function') {
     throw new Error('createSceneAddonHost requires player.getPosition().');
+  }
+  if (interaction && typeof interaction.acquireLock !== 'function') {
+    throw new Error('createSceneAddonHost options.interaction.acquireLock must be a function.');
   }
   assertFunction(onError, 'createSceneAddonHost options.onError must be a function.');
 
@@ -114,7 +119,9 @@ export function createSceneAddonHost(options = {}) {
         uiRoot,
         hudRoot,
         signal: abortController.signal,
-        player
+        player,
+        input,
+        interaction
       }));
       if (instance && typeof instance.then === 'function') {
         throw new Error(`Scene addon "${id}" mount() must be synchronous.`);

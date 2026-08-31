@@ -1,7 +1,7 @@
-import { avatarStore } from './services/avatar-store.js';
 import { createSdkAssetUrl, getAvatarSdkConfig } from './sdk-config.js';
-import { sdkSceneAddonDefinitions } from './addons/sdk-scene-addons.js?v=20260828-scene-menu';
-import './components/sdk-scene-menu/sdk-scene-menu.js?v=20260828-scene-menu';
+import { sdkSceneAddonDefinitions } from './addons/sdk-scene-addons.js?v=20260831-white-projectile';
+import './components/addon-loader/addon-loader.js?v=20260830-addon-loader';
+import './components/input-profile-dropdown/input-profile-dropdown.js?v=20260831-gamepad-trigger';
 
 const config = getAvatarSdkConfig();
 
@@ -10,14 +10,27 @@ const DEFAULT_VRM_URL = `${createSdkAssetUrl('avatars/default/v1/default-avatar.
 const DEFAULT_THUMBNAIL_URL = `${createSdkAssetUrl('avatars/default/v1/default-avatar.png', config)}?v=${PUBLIC_ASSET_REVISION}`;
 
 const elements = {
-  creatorEntry: document.querySelector('avatar-creator-entry'),
-  sceneMenu: document.querySelector('sdk-scene-menu'),
+  creatorAdapter: document.querySelector('avatar-creator-adapter'),
+  addonLoader: document.querySelector('addon-loader'),
+  inputProfileDropdown: document.querySelector('input-profile-dropdown'),
   addonHudRoot: document.querySelector('.addon-hud-slot'),
   addonOverlayRoot: document.querySelector('.addon-overlay-layer')
 };
+const avatarCreatorStore = elements.creatorAdapter?.store;
 
 let sceneController = null;
 let currentLocalAvatar = null;
+let unsubscribeAddonRegistry = null;
+
+function syncAddonLoader(snapshot) {
+  if (!elements.addonLoader) return;
+  const installedIds = new Set(snapshot.installedIds);
+  elements.addonLoader.addons = snapshot.availableAddons.map((addon) => ({
+    id: addon.id,
+    label: addon.label,
+    installed: installedIds.has(addon.id)
+  }));
+}
 
 async function applyCustomAvatar(avatar) {
   if (!(avatar && avatar.vrmUrl && avatar.thumbnailUrl)) return;
@@ -28,17 +41,18 @@ async function applyCustomAvatar(avatar) {
       displayName: String(avatar.fileName || 'My Avatar').replace(/\.vrm$/i, '')
     });
     currentLocalAvatar = avatar;
-    if (elements.creatorEntry) elements.creatorEntry.avatar = avatar;
-    if (previousAvatar && previousAvatar !== avatar) avatarStore.releaseAvatar(previousAvatar);
+    if (elements.creatorAdapter) elements.creatorAdapter.avatar = avatar;
+    if (previousAvatar && previousAvatar !== avatar) avatarCreatorStore.releaseAvatar(previousAvatar);
   } catch (error) {
-    if (avatar !== previousAvatar) avatarStore.releaseAvatar(avatar);
+    if (avatar !== previousAvatar) avatarCreatorStore.releaseAvatar(avatar);
     throw error;
   }
 }
 
 async function restoreCustomAvatar() {
+  if (!avatarCreatorStore) return;
   try {
-    const avatar = await avatarStore.getAvatar();
+    const avatar = await avatarCreatorStore.getAvatar();
     if (avatar) await applyCustomAvatar(avatar);
   } catch (error) {
     console.warn('Unable to restore the browser avatar:', error);
@@ -46,7 +60,7 @@ async function restoreCustomAvatar() {
 }
 
 async function bootstrapScene() {
-  const { createVrmScene } = await import('./runtime/three-scene.js?v=20260828-addon-ui-slots');
+  const { createVrmScene } = await import('./runtime/three-scene.js?v=20260831-shadow-30m');
   sceneController = await createVrmScene({
     canvas: document.getElementById('landing-scene-canvas'),
     addonHudRoot: elements.addonHudRoot,
@@ -55,43 +69,70 @@ async function bootstrapScene() {
   });
   try {
     sceneController.addons.registerAll(sdkSceneAddonDefinitions);
-    sceneController.addons.installAll();
+    for (const definition of sdkSceneAddonDefinitions) {
+      if (definition.defaultEnabled === true) sceneController.addons.install(definition.id);
+    }
   } catch (error) {
     sceneController.dispose();
     sceneController = null;
     throw error;
   }
   sceneController.start();
-  if (elements.creatorEntry?.isOpen) sceneController.pause();
+  if (elements.creatorAdapter?.isOpen) sceneController.pause();
+  if (elements.addonLoader) {
+    unsubscribeAddonRegistry = sceneController.addons.subscribe(syncAddonLoader);
+    elements.addonLoader.disabled = false;
+  }
+  if (elements.inputProfileDropdown) {
+    elements.inputProfileDropdown.activeProfile = sceneController.activeControlProfile;
+    elements.inputProfileDropdown.disabled = false;
+  }
   await sceneController.loadAvatarFromUrl(DEFAULT_VRM_URL, {
     key: 'default-avatar',
     displayName: 'Default Avatar'
   });
   sceneController.setJoystickVisible(true);
-  if (elements.sceneMenu) elements.sceneMenu.activeProfile = sceneController.activeControlProfile;
-  if (elements.creatorEntry) elements.creatorEntry.avatar = { thumbnailUrl: DEFAULT_THUMBNAIL_URL };
+  if (elements.creatorAdapter) elements.creatorAdapter.avatar = { thumbnailUrl: DEFAULT_THUMBNAIL_URL };
   await restoreCustomAvatar();
 }
 
-elements.creatorEntry?.addEventListener('avatar-creator-open', () => sceneController?.pause());
-elements.creatorEntry?.addEventListener('avatar-creator-close', () => sceneController?.resume());
-elements.creatorEntry?.addEventListener('avatar-created', (event) => {
+elements.creatorAdapter?.addEventListener('avatar-creator-open', () => sceneController?.pause());
+elements.creatorAdapter?.addEventListener('avatar-creator-close', () => sceneController?.resume());
+elements.creatorAdapter?.addEventListener('avatar-created', (event) => {
   applyCustomAvatar(event.detail?.avatar).catch((error) => console.error('Unable to load avatar:', error));
 });
-elements.creatorEntry?.addEventListener('avatar-creator-notice', (event) => {
+elements.creatorAdapter?.addEventListener('avatar-creator-notice', (event) => {
   console.info('Avatar Creator:', event.detail?.message);
 });
-elements.sceneMenu?.addEventListener('control-profile-change', (event) => {
+elements.addonLoader?.addEventListener('addon-toggle-request', (event) => {
+  if (!sceneController) return;
+  const addonId = String(event.detail?.addonId || '');
+  const installed = event.detail?.installed === true;
+  if (!sceneController.addons.has(addonId)) return;
+  try {
+    if (installed) sceneController.addons.install(addonId);
+    else sceneController.addons.uninstall(addonId);
+    elements.addonLoader.setAddonState(addonId, { installed: sceneController.addons.isInstalled(addonId) });
+  } catch (error) {
+    console.error(`Unable to ${installed ? 'install' : 'uninstall'} addon "${addonId}":`, error);
+    elements.addonLoader.setAddonState(addonId, { installed: sceneController.addons.isInstalled(addonId) });
+  }
+});
+elements.inputProfileDropdown?.addEventListener('input-profile-change', (event) => {
   if (!sceneController) return;
   try {
     const profileId = sceneController.setControlProfile(event.detail?.profileId);
-    elements.sceneMenu.activeProfile = profileId;
+    elements.inputProfileDropdown.activeProfile = profileId;
   } catch (error) {
     console.error('Unable to switch camera and control profile:', error);
-    elements.sceneMenu.activeProfile = sceneController.activeControlProfile;
+    elements.inputProfileDropdown.activeProfile = sceneController.activeControlProfile;
   }
 });
-window.addEventListener('pagehide', () => avatarStore.releaseAvatar(currentLocalAvatar), { once: true });
+window.addEventListener('pagehide', () => {
+  unsubscribeAddonRegistry?.();
+  unsubscribeAddonRegistry = null;
+  avatarCreatorStore?.releaseAvatar(currentLocalAvatar);
+}, { once: true });
 
 bootstrapScene().catch((error) => {
   console.error('Unable to start the scene:', error);

@@ -1,6 +1,6 @@
 # Gem Collector addon
 
-`gem-collector` is an optional SDK Scene addon. It owns its game state, Three.js objects, UI, event listeners, and GPU cleanup. The base scene only supplies isolated world, overlay, and optional HUD roots plus a narrow player-position interface. The counter uses the HUD root while the completion dialog uses the overlay root; older hosts without HUD support fall back to the overlay root.
+`gem-collector` is a portable Three.js addon and is enabled by default in the reference SDK Scene. It owns its game state, Three.js objects, UI, event listeners, and GPU cleanup. A Host only supplies isolated world, overlay, and optional HUD roots plus a narrow player-position interface. The counter uses the HUD root while the completion dialog uses the overlay root; older hosts without HUD support fall back to the overlay root.
 
 ```js
 import { gemCollectorAddonDefinition } from './index.js';
@@ -22,7 +22,11 @@ sceneRuntime.addons.unregister('gem-collector');
 
 `uninstall()` removes the addon roots and calls its disposer while keeping the definition available for a later `install()`. `unregister()` performs the same cleanup and then removes the definition from the registry. Neither operation replaces or re-creates the Avatar, camera, renderer, base floor, lighting, or controls.
 
-The reference SDK Scene's source-level package list lives only in `../sdk-scene-addons.js`. Add this definition to that array to install the package with the scene, or remove it from that file and delete this directory for a complete source uninstall.
+The reference SDK Scene's available package catalog lives only in `../sdk-scene-addons.js`. The definition supplies its portable label and `defaultEnabled` preference. SDK Scene's `<addon-loader>` is an optional Host UI over the generic registry; other Hosts can register and install this definition without loading that component or SDK Scene CSS.
+
+## Host interaction
+
+When the completion dialog becomes visible, Gem Collector requests the optional Host interaction lock described in the [scene addon Host contract](../README.md#interaction-locks). It releases its lock before Restart and during disposal. Without that Host capability, Gem Collector stops its own collection logic but cannot pause the Host's player, camera, render loop, physics, or other addons.
 
 ## Options
 

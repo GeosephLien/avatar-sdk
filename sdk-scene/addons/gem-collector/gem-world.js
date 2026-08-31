@@ -56,7 +56,7 @@ function createGainTexture() {
   const context = canvas.getContext('2d');
   if (!context) throw new Error('Unable to create the gem collection feedback canvas.');
 
-  context.font = '800 58px "Noto Sans", sans-serif';
+  context.font = '700 58px "Roboto", sans-serif';
   context.textAlign = 'center';
   context.textBaseline = 'middle';
   context.fillStyle = '#ffffff';

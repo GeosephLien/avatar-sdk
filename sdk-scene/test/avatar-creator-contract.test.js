@@ -5,7 +5,7 @@ import {
   isTrustedCreatorMessage,
   normalizeAvatarDescriptor,
   resolveCreatorUrl
-} from '../components/avatar-creator-entry/avatar-creator-contract.js';
+} from '../components/avatar-creator-adapter/avatar-creator-contract.js';
 
 test('resolves only HTTP Creator URLs against the host page', () => {
   assert.equal(resolveCreatorUrl('/custom-creator', 'https://host.example/page').href, 'https://host.example/custom-creator');
@@ -26,6 +26,35 @@ test('exposes only the public avatar descriptor fields', () => {
     vrmUrl: 'https://content.example/avatar.vrm',
     thumbnailUrl: 'https://content.example/thumbnail.png',
     expiresAt: 123
+  });
+});
+
+test('exposes an isolated validated Creator state in the avatar descriptor', () => {
+  const creatorState = {
+    schemaVersion: 1,
+    catalogVersion: '2026-08-29',
+    characterId: 'iris'
+  };
+  const descriptor = normalizeAvatarDescriptor({ creatorState });
+  creatorState.characterId = 'external-mutation';
+
+  assert.deepEqual(descriptor.creatorState, {
+    schemaVersion: 1,
+    catalogVersion: '2026-08-29',
+    characterId: 'iris'
+  });
+});
+
+test('keeps a valid avatar descriptor when optional Creator state is malformed', () => {
+  const descriptor = normalizeAvatarDescriptor({
+    vrmUrl: 'blob:avatar',
+    thumbnailUrl: 'blob:thumbnail',
+    creatorState: { schemaVersion: 99 }
+  });
+
+  assert.deepEqual(descriptor, {
+    vrmUrl: 'blob:avatar',
+    thumbnailUrl: 'blob:thumbnail'
   });
 });
 

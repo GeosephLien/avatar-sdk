@@ -5,9 +5,10 @@ import {
   DEFAULT_ANIMATION_BASE_URL,
   DEFAULT_ANIMATION_REVISION
 } from '../components/avatar-presentation/avatar-presentation.js?v=20260823-vrma-cache';
-import { createSceneAddonHost } from './scene-addon-host.js?v=20260828-addon-ui-slots';
+import { createSceneAddonHost } from './scene-addon-host.js?v=20260831-result-lock';
 import { createSceneAddonRegistry } from './scene-addon-registry.js?v=20260827-addon-registry';
-import { createSceneAvatarController } from './scene-avatar-controller.js?v=20260827-scene-addons';
+import { createSceneAvatarController } from './scene-avatar-controller.js?v=20260831-target-shooter';
+import { createSceneInput } from './scene-input.js?v=20260831-target-shooter';
 
 export async function createVrmScene(options) {
   const {
@@ -194,10 +195,10 @@ export async function createVrmScene(options) {
   directionalLight.shadow.mapSize.set(2048, 2048);
   directionalLight.shadow.camera.near = 0.1;
   directionalLight.shadow.camera.far = 30;
-  directionalLight.shadow.camera.left = -5;
-  directionalLight.shadow.camera.right = 5;
-  directionalLight.shadow.camera.top = 5;
-  directionalLight.shadow.camera.bottom = -5;
+  directionalLight.shadow.camera.left = -15;
+  directionalLight.shadow.camera.right = 15;
+  directionalLight.shadow.camera.top = 15;
+  directionalLight.shadow.camera.bottom = -15;
   directionalLight.shadow.bias = -0.0001;
   scene.add(directionalLight);
   scene.add(directionalLight.target);
@@ -244,11 +245,34 @@ export async function createVrmScene(options) {
     animationRevision || DEFAULT_ANIMATION_REVISION
   );
   const presentation = createAvatarPresentation({ animations });
+  const sceneInput = createSceneInput();
+  const pointerRaycaster = new THREE.Raycaster();
+  const pointerNdc = new THREE.Vector2();
+  const interactionLocks = new Set();
   const controller = createSceneAvatarController({
     scene,
     target: presentation.object3D,
     domElement: canvas,
-    enableControl: true
+    enableControl: true,
+    onPointerClick(event) {
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return false;
+      pointerNdc.set(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1
+      );
+      pointerRaycaster.setFromCamera(pointerNdc, controller.camera);
+      return sceneInput.dispatchClick({
+        pointerId: event.pointerId,
+        pointerType: event.pointerType,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        ray: {
+          origin: pointerRaycaster.ray.origin,
+          direction: pointerRaycaster.ray.direction
+        }
+      });
+    }
   });
   const camera = controller.camera;
   const addonHost = createSceneAddonHost({
@@ -272,6 +296,8 @@ export async function createVrmScene(options) {
       root.dataset.sceneAddon = id;
       return root;
     },
+    input: sceneInput.input,
+    interaction: Object.freeze({ acquireLock: acquireInteractionLock }),
     player: Object.freeze({
       getPosition(target = {}) {
         target.x = controller.anchor.position.x;
@@ -292,6 +318,7 @@ export async function createVrmScene(options) {
   let animationFrameId = 0;
   let animationRunning = false;
   let hostPaused = false;
+  let controlsEnabled = true;
   let webglContextLost = false;
   let disposed = false;
 
@@ -361,7 +388,7 @@ export async function createVrmScene(options) {
   }
 
   function startAnimationLoop() {
-    if (animationRunning || hostPaused || webglContextLost || disposed) return;
+    if (animationRunning || hostPaused || interactionLocks.size > 0 || webglContextLost || disposed) return;
     animationRunning = true;
     clock.getDelta();
     animationFrameId = requestAnimationFrame(animate);
@@ -419,23 +446,42 @@ export async function createVrmScene(options) {
     startAnimationLoop();
   }
 
+  function syncInteractionState() {
+    const blocked = hostPaused || interactionLocks.size > 0;
+    controller.setEnableControl(!blocked && controlsEnabled);
+    if (blocked) stopAnimationLoop();
+    else startAnimationLoop();
+  }
+
+  function acquireInteractionLock() {
+    const lock = Symbol('scene-interaction-lock');
+    interactionLocks.add(lock);
+    syncInteractionState();
+    let released = false;
+    return function releaseInteractionLock() {
+      if (released) return;
+      released = true;
+      interactionLocks.delete(lock);
+      syncInteractionState();
+    };
+  }
+
   function pause() {
     hostPaused = true;
-    controller.setEnableControl(false);
-    stopAnimationLoop();
+    syncInteractionState();
   }
 
   function resume() {
     hostPaused = false;
-    controller.setEnableControl(true);
-    startAnimationLoop();
+    syncInteractionState();
   }
 
   function setControlsState(state) {
     const animationEnabled = !state || state.animationEnabled !== false;
     const controlEnabled = animationEnabled && !(state && state.controlEnabled === false);
+    controlsEnabled = controlEnabled;
     presentation.setEnableAnimation(animationEnabled);
-    controller.setEnableControl(controlEnabled);
+    syncInteractionState();
   }
 
   function setAnimations(animations) {
@@ -461,6 +507,7 @@ export async function createVrmScene(options) {
   function dispose() {
     if (disposed) return;
     disposed = true;
+    interactionLocks.clear();
     avatarLoadSequence += 1;
     stopAnimationLoop();
     window.removeEventListener('resize', handleResize);
@@ -469,6 +516,7 @@ export async function createVrmScene(options) {
     canvas.removeEventListener('webglcontextrestored', handleContextRestored);
     addonRegistry.dispose();
     addonHost.dispose();
+    sceneInput.dispose();
     controller.dispose();
     presentation.dispose();
     checkerFloor.geometry.dispose();

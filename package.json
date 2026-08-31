@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node --check sdk-scene/sdk-config.js && node --check sdk-scene/sdk-scene.js && node --check sdk-scene/services/*.js && node --check sdk-scene/components/avatar-creator-entry/*.js && node --check sdk-scene/components/avatar-presentation/*.js && node --check sdk-scene/runtime/*.js",
-    "test": "node --test sdk-scene/test/*.test.js",
+    "check": "node --check sdk-scene/sdk-config.js && node --check sdk-scene/sdk-scene.js && node --check sdk-scene/addons/sdk-scene-addons.js && node --check sdk-scene/components/addon-loader/addon-loader.js && node --check sdk-scene/components/input-profile-dropdown/input-profile-dropdown.js && node --check sdk-scene/components/avatar-creator-adapter/*.js && node --check sdk-scene/components/avatar-creator-adapter/avatar-creator-store/*.js && node --check sdk-scene/components/avatar-presentation/*.js && node --check sdk-scene/runtime/*.js",
+    "test": "node --test sdk-scene/test/*.test.js sdk-scene/components/avatar-creator-adapter/avatar-creator-store/*.test.js sdk-scene/addons/*/test/*.test.js",
     "start": "http-server . -p 4173 -c-1"
   },
   "devDependencies": {

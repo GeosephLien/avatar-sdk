@@ -20,7 +20,7 @@ function createParent(methodName) {
   };
 }
 
-function createHarness(onError = () => {}, { withHud = false } = {}) {
+function createHarness(onError = () => {}, { withHud = false, input = null, interaction = null } = {}) {
   const worldParent = createParent('add');
   const uiParent = createParent('appendChild');
   const hudParent = createParent('appendChild');
@@ -35,6 +35,8 @@ function createHarness(onError = () => {}, { withHud = false } = {}) {
     worldParent,
     uiParent,
     player,
+    input,
+    interaction,
     onError,
     createWorldRoot: ({ id }) => ({ type: 'world', id }),
     createUiRoot: ({ id }) => ({ type: 'ui', id, parentNode: null }),
@@ -67,6 +69,7 @@ test('mounts, updates, and fully unmounts an isolated addon', () => {
   assert.equal(handle.mounted, true);
   assert.equal(handle.api.restart(), 'restarted');
   assert.equal(mountedContext.player, player);
+  assert.equal(mountedContext.input, null);
   assert.equal(mountedContext.hudRoot, null);
   assert.equal(worldParent.children.length, 1);
   assert.equal(uiParent.children.length, 1);
@@ -81,6 +84,32 @@ test('mounts, updates, and fully unmounts an isolated addon', () => {
   assert.equal(host.size, 0);
   assert.equal(worldParent.children.length, 0);
   assert.equal(uiParent.children.length, 0);
+});
+
+test('passes the optional input capability to addons', () => {
+  const input = Object.freeze({ onClick() {} });
+  const { host } = createHarness(() => {}, { input });
+  let mountedContext;
+
+  host.mountAddon({
+    id: 'input-addon',
+    mount(context) { mountedContext = context; }
+  });
+
+  assert.equal(mountedContext.input, input);
+});
+
+test('passes the optional interaction lock capability to addons', () => {
+  const interaction = Object.freeze({ acquireLock() {} });
+  const { host } = createHarness(() => {}, { interaction });
+  let mountedContext;
+
+  host.mountAddon({
+    id: 'locking-addon',
+    mount(context) { mountedContext = context; }
+  });
+
+  assert.equal(mountedContext.interaction, interaction);
 });
 
 test('mounts ordered isolated HUD roots and removes them with each addon', () => {
